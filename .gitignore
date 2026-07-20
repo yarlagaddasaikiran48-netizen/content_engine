@@ -1,0 +1,15 @@
+# Secrets — never commit real credentials
+.env
+token.json
+client_secret*.json
+
+# Generated media and metadata
+output/
+*.mp3
+*.mp4
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
