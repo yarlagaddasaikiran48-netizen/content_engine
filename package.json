@@ -15,7 +15,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "seed:topics": "tsx scripts/seed-topics.ts",
-    "auth:youtube": "tsx scripts/get-youtube-token.ts",
     "tts:test": "tsx scripts/test-tts.ts",
     "render": "tsx scripts/render-and-publish.ts",
     "selftest": "tsx scripts/self-test.ts"

@@ -221,8 +221,8 @@ async function main(): Promise<void> {
     // that was knowable up front.
     if (!features.youtube) {
       throw new Error(
-        "YouTube credentials are missing. Set YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET and " +
-          "YOUTUBE_REFRESH_TOKEN (run `npm run auth:youtube` to obtain the refresh token).",
+        "YouTube is not connected. Open Settings, save the YouTube client ID and secret, " +
+          "then press Connect YouTube.",
       );
     }
 
