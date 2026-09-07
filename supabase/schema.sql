@@ -340,3 +340,8 @@ create policy "spiritual audio public read"
 --  Done. Next: `npm run seed:topics` to fill topic_ledger with 800+ real,
 --  citable topics (all 700 Gita verses + a curated Purana/Upanishad index).
 -- ============================================================================
+
+-- ============================================================================
+--  Migrations applied after this file, in order. Each is idempotent.
+--    supabase/migrations/001_settings_and_scheduling.sql
+-- ============================================================================
