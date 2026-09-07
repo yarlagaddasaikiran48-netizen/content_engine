@@ -10,6 +10,7 @@
  */
 
 import {
+  effectiveValue,
   SETTING_DEFS,
   settingDef,
   type SettingGroup,
@@ -30,8 +31,13 @@ export interface MaskedSetting {
   label: string;
   kind: SettingKind;
   secret: boolean;
-  /** Always null for secrets. */
+  /**
+   * Always null for secrets. For everything else this is the *effective*
+   * value — including an environment or catalogue fallback — so the form shows
+   * what the engine is actually using rather than a misleading blank.
+   */
   value: string | null;
+  /** True only when a row actually holds a value, ignoring any fallback. */
   isSet: boolean;
   updatedAt: string | null;
   options?: string[];
@@ -130,7 +136,7 @@ export async function maskedSettings(): Promise<MaskedSetting[]> {
       label: def.label,
       kind: def.kind,
       secret: def.secret,
-      value: def.secret ? null : stored,
+      value: def.secret ? null : effectiveValue(def, stored),
       isSet,
       updatedAt: row?.updatedAt ?? null,
       options: def.options,

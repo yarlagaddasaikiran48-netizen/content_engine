@@ -264,3 +264,20 @@ export function settingDef(key: string): SettingDef {
   }
   return def;
 }
+
+/**
+ * The precedence rule, in one place: stored row, then environment variable,
+ * then the catalogue fallback.
+ *
+ * It lives here rather than in the config loader because the Settings form
+ * needs it too — a field showing blank when the engine is actually using
+ * "gemini-2.5-flash" reads as broken. Two copies of this rule would drift.
+ */
+export function effectiveValue(def: SettingDef, stored: string | null | undefined): string {
+  if (stored !== undefined && stored !== null && stored !== "") return stored;
+  if (def.fallbackEnv) {
+    const fromEnv = process.env[def.fallbackEnv];
+    if (fromEnv && fromEnv.trim() !== "") return fromEnv.trim();
+  }
+  return def.fallback;
+}

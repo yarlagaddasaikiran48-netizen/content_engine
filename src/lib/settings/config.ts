@@ -8,7 +8,7 @@
  * existing deployment keeps working unchanged until the first value is saved.
  */
 
-import { SETTING_DEFS, settingDef } from "@/lib/settings/catalogue";
+import { effectiveValue, SETTING_DEFS, settingDef } from "@/lib/settings/catalogue";
 import { readRawSettings } from "@/lib/settings/store";
 
 export interface AppConfig {
@@ -48,16 +48,9 @@ type Rows = Map<string, { value: string | null }>;
 const DEFAULT_SLOTS = ["00:00", "04:00"];
 const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-/** Row, then environment, then catalogue fallback. */
+/** Row, then environment, then catalogue fallback — defined in catalogue.ts. */
 function resolve(rows: Rows, key: string): string {
-  const def = settingDef(key);
-  const row = rows.get(key)?.value;
-  if (row !== undefined && row !== null && row !== "") return row;
-  if (def.fallbackEnv) {
-    const fromEnv = process.env[def.fallbackEnv];
-    if (fromEnv && fromEnv.trim() !== "") return fromEnv.trim();
-  }
-  return def.fallback;
+  return effectiveValue(settingDef(key), rows.get(key)?.value);
 }
 
 /**

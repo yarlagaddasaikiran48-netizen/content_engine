@@ -115,6 +115,22 @@ describe("maskedSettings", () => {
     expect(masked.find((m) => m.key === "gemini_api_key")!.isSet).toBe(false);
   });
 
+  it("shows the effective value of an unset non-secret, not a blank", async () => {
+    // A blank field beside an engine happily using "gemini-2.5-flash" reads as
+    // broken, and invites the operator to retype a value that already applies.
+    const masked = await maskedSettings();
+    const model = masked.find((m) => m.key === "gemini_model")!;
+    expect(model.value).toBe("gemini-2.5-flash");
+    expect(model.isSet).toBe(false);
+  });
+
+  it("still distinguishes a stored value from a fallback", async () => {
+    await writeSettings({ gemini_model: "gemini-2.5-pro" });
+    const model = (await maskedSettings()).find((m) => m.key === "gemini_model")!;
+    expect(model.value).toBe("gemini-2.5-pro");
+    expect(model.isSet).toBe(true);
+  });
+
   it("carries the catalogue metadata the form needs to render", async () => {
     const target = (await maskedSettings()).find((m) => m.key === "target_seconds")!;
     expect(target.kind).toBe("number");
