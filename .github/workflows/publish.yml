@@ -1,0 +1,54 @@
+name: Publish to YouTube
+
+# Fired by the Post button, via repository_dispatch, once a rendered video has
+# been watched and approved.
+#
+# Kept separate from the render workflow on purpose. Rendering produces a file
+# and stops; this takes that exact file — the one that was reviewed, not a
+# re-render that might differ — and puts it on the channel. That separation is
+# the whole reason a preview is possible.
+on:
+  repository_dispatch:
+    types: [publish-video]
+  workflow_dispatch:
+    inputs:
+      video_id:
+        description: "spiritual_videos.id to publish (must be status 'ready')"
+        required: true
+        type: string
+
+# Never publish the same item twice concurrently. A duplicate upload cannot be
+# undone from here — it becomes a second video on the channel.
+concurrency:
+  group: publish-${{ github.event.client_payload.video_id || inputs.video_id }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Upload to YouTube, then archive and delete
+        env:
+          VIDEO_ID: ${{ github.event.client_payload.video_id || inputs.video_id }}
+          CALLBACK_URL: ${{ github.event.client_payload.callback_url }}
+          # YouTube credentials are read from the settings table, not from
+          # here: the Connect YouTube button writes the refresh token to the
+          # database, so these two secrets are all the runner needs.
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PUBLISH_CALLBACK_SECRET: ${{ secrets.PUBLISH_CALLBACK_SECRET }}
+        run: npx tsx scripts/publish-video.ts --id="$VIDEO_ID" --callback-url="$CALLBACK_URL"

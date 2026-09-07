@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
  *
  * Called by the GitHub Actions renderer at each stage:
  *   { status: "rendering" }
+ *   { status: "ready", video_url: "..." }
  *   { status: "published", youtube_video_id: "..." }
  *   { status: "failed", error: "..." }
  *
@@ -44,6 +45,7 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as {
       video_id?: string;
       status?: string;
+      video_url?: string;
       youtube_video_id?: string;
       error?: string;
     };
@@ -63,6 +65,22 @@ export async function POST(request: Request) {
         return ok({ status: "rendering" });
       }
 
+      case "ready": {
+        // Rendering finished. The MP4 is in storage and watchable; nothing has
+        // reached YouTube yet.
+        const { error } = await supabase
+          .from("spiritual_videos")
+          .update({
+            status: "ready",
+            video_url: body.video_url ?? null,
+            rendered_at: now,
+            error_message: null,
+          })
+          .eq("id", body.video_id);
+        if (error) return fail(error.message, 500);
+        return ok({ status: "ready" });
+      }
+
       case "published": {
         if (!body.youtube_video_id) {
           return fail("Missing youtube_video_id for a published callback.", 400);
@@ -77,6 +95,9 @@ export async function POST(request: Request) {
             error_message: null,
           })
           .eq("id", body.video_id);
+        // A missing row is not an error here: the publish job archives and
+        // deletes the video moments after sending this callback, so the two
+        // can race. The upload already succeeded either way.
         if (error) return fail(error.message, 500);
         return ok({ status: "published" });
       }

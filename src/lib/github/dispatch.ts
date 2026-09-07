@@ -6,9 +6,14 @@
  * Actions gives every account free runner minutes on a machine that already
  * has FFmpeg installed, with no execution time limit worth worrying about.
  *
- * Pressing Approve therefore fires a `repository_dispatch`, and the workflow
- * in .github/workflows/render-and-publish.yml does the heavy work, then calls
- * back to /api/publish/callback with the resulting YouTube id.
+ * Rendering therefore fires a `repository_dispatch`, and the workflow in
+ * .github/workflows/render-and-publish.yml does the heavy work, then calls
+ * back to /api/publish/callback.
+ *
+ * There are two events, deliberately kept apart: "render-video" produces an
+ * MP4 and stops, so it can be watched before it goes anywhere; "publish-video"
+ * takes an already-rendered file and puts it on YouTube. Splitting them is
+ * what makes a preview possible at all.
  */
 
 import { loadConfig } from "@/lib/settings/config";
@@ -18,7 +23,12 @@ export interface DispatchPayload {
   callback_url: string;
 }
 
-export async function dispatchRender(payload: DispatchPayload): Promise<void> {
+export type DispatchEvent = "render-video" | "publish-video";
+
+export async function dispatchRender(
+  payload: DispatchPayload,
+  event: DispatchEvent = "render-video",
+): Promise<void> {
   const env = await loadConfig();
   const url = `https://api.github.com/repos/${env.githubOwner}/${env.githubRepo}/dispatches`;
 
@@ -31,7 +41,7 @@ export async function dispatchRender(payload: DispatchPayload): Promise<void> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      event_type: "render-video",
+      event_type: event,
       client_payload: payload,
     }),
   });

@@ -3,6 +3,11 @@ import type { VideoStatus } from "@/lib/types";
 const STYLES: Record<VideoStatus, { label: string; bg: string; fg: string }> = {
   pending: { label: "Awaiting review", bg: "var(--accent-soft)", fg: "var(--accent)" },
   approved: { label: "Approved", bg: "var(--info-soft)", fg: "var(--info)" },
+  ready: {
+    label: "Ready to post",
+    bg: "var(--info-soft)",
+    fg: "var(--info)",
+  },
   rendering: { label: "Rendering", bg: "var(--info-soft)", fg: "var(--info)" },
   published: { label: "Live on YouTube", bg: "var(--success-soft)", fg: "var(--success)" },
   rejected: { label: "Rejected", bg: "var(--bg-sunken)", fg: "var(--text-faint)" },

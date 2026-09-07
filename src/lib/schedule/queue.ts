@@ -17,6 +17,8 @@ export interface QueueEntry {
 }
 
 export interface QueueData {
+  /** Rendered, watchable, awaiting the Post button. */
+  ready: SpiritualVideo[];
   waiting: QueueEntry[];
   inFlight: SpiritualVideo[];
   postingTimes: string[];
@@ -32,7 +34,7 @@ export async function readQueue(): Promise<QueueData> {
   const { data, error } = await supabase
     .from("spiritual_videos")
     .select("*")
-    .in("status", ["approved", "rendering", "failed"])
+    .in("status", ["approved", "rendering", "ready", "failed"])
     .order("queue_position", { ascending: true, nullsFirst: false })
     .order("approved_at", { ascending: true })
     .limit(100);
@@ -41,12 +43,14 @@ export async function readQueue(): Promise<QueueData> {
 
   const rows = (data ?? []) as SpiritualVideo[];
   const waiting = rows.filter((r) => r.status === "approved");
-  const inFlight = rows.filter((r) => r.status !== "approved");
+  const ready = rows.filter((r) => r.status === "ready");
+  const inFlight = rows.filter((r) => r.status === "rendering" || r.status === "failed");
 
   // The schedule is projected, never stored — see lib/schedule/slots.ts.
   const plan = projectSchedule(waiting.length, new Date(), cfg.postingTimes, cfg.postingTimezone);
 
   return {
+    ready,
     waiting: waiting.map((video, index) => ({ video, when: plan[index]?.label ?? "unscheduled" })),
     inFlight,
     postingTimes: cfg.postingTimes,

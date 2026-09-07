@@ -20,6 +20,7 @@ export function PublishQueue({ initial, loadError }: { initial: QueueData; loadE
     const body = await fetch("/api/queue", { cache: "no-store" }).then((r) => r.json());
     if (body.ok) {
       setData({
+        ready: body.ready,
         waiting: body.waiting,
         inFlight: body.inFlight,
         postingTimes: body.postingTimes,
@@ -77,6 +78,44 @@ export function PublishQueue({ initial, loadError }: { initial: QueueData; loadE
     }
   }
 
+  async function post(id: string) {
+    setBusy(id);
+    try {
+      const response = await fetch("/api/publish", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const body = await response.json();
+      if (!response.ok || !body.ok) throw new Error(body.error ?? "Could not post.");
+      setNote({ tone: "ok", text: body.message ?? "Uploading to YouTube." });
+      await refresh();
+    } catch (error) {
+      setNote({ tone: "bad", text: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function discard(id: string) {
+    setBusy(id);
+    try {
+      const response = await fetch("/api/reject", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, reason: "Discarded after watching the render." }),
+      });
+      const body = await response.json();
+      if (!response.ok || !body.ok) throw new Error(body.error ?? "Could not discard.");
+      setNote({ tone: "ok", text: "Discarded. It will not be posted." });
+      await refresh();
+    } catch (error) {
+      setNote({ tone: "bad", text: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function retry(id: string) {
     setBusy(id);
     try {
@@ -126,6 +165,55 @@ export function PublishQueue({ initial, loadError }: { initial: QueueData; loadE
         >
           {note.text}
         </p>
+      )}
+
+      {data.ready.length > 0 && (
+        <section className="mt-4">
+          <h2 className="text-sm font-bold" style={{ color: "var(--text-muted)" }}>
+            Ready to post — watch it first
+          </h2>
+          {data.ready.map((video) => (
+            <div key={video.id} className="card mt-2 p-4">
+              {video.video_url && (
+                <video
+                  className="preview-player"
+                  src={video.video_url}
+                  controls
+                  playsInline
+                  preload="metadata"
+                />
+              )}
+              <p className="mt-3 text-sm font-semibold">{video.title}</p>
+              <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                {video.scripture} — {video.reference}
+                {video.duration_seconds ? ` · ${Math.round(video.duration_seconds)}s` : ""}
+                {video.video_bytes ? ` · ${(video.video_bytes / 1024 / 1024).toFixed(1)} MB` : ""}
+              </p>
+
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  className="btn btn-danger flex-1 py-2.5"
+                  onClick={() => discard(video.id)}
+                  disabled={busy !== null}
+                >
+                  Discard
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary flex-1 py-2.5"
+                  onClick={() => post(video.id)}
+                  disabled={busy !== null}
+                >
+                  {busy === video.id ? "Posting…" : "Post to YouTube"}
+                </button>
+              </div>
+              <p className="mt-2 text-xs" style={{ color: "var(--text-faint)" }}>
+                Once it is live this disappears from here and from the database.
+              </p>
+            </div>
+          ))}
+        </section>
       )}
 
       {data.inFlight.length > 0 && (
