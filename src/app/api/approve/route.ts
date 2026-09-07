@@ -1,5 +1,5 @@
 import { fail, messageOf, ok } from "@/lib/api";
-import { config, features } from "@/lib/env";
+import { loadConfig } from "@/lib/settings/config";
 import { dispatchRender } from "@/lib/github/dispatch";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { SpiritualVideo } from "@/lib/types";
@@ -17,6 +17,7 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(request: Request) {
   try {
+    const config = await loadConfig();
     const body = (await request.json().catch(() => ({}))) as { id?: string };
     if (!body.id) return fail("Missing video id.", 400);
 
@@ -56,13 +57,14 @@ export async function POST(request: Request) {
     if (updateError) return fail(updateError.message, 500);
 
     // ---- hand off to the renderer ----
-    if (!features.githubRenderer) {
+    const hasRenderer = Boolean(config.githubOwner && config.githubRepo && config.githubDispatchToken);
+    if (!hasRenderer) {
       return ok({
         video: updated as SpiritualVideo,
         dispatched: false,
         message:
           "Approved. The GitHub Actions renderer is not configured, so nothing was dispatched — " +
-          "set GITHUB_OWNER, GITHUB_REPO and GITHUB_DISPATCH_TOKEN, or render locally with `npm run render`.",
+          "add the GitHub owner, repo and dispatch token in Settings, or render locally with `npm run render`.",
       });
     }
 
@@ -71,7 +73,7 @@ export async function POST(request: Request) {
         video: updated as SpiritualVideo,
         dispatched: false,
         message:
-          "Approved, but NEXT_PUBLIC_SITE_URL is not set, so the renderer would have nowhere to report back to. Set it and approve again.",
+          "Approved, but the Site URL is not set in Settings, so the renderer would have nowhere to report back to. Set it and approve again.",
       });
     }
 

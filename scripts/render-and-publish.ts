@@ -24,7 +24,7 @@ import { join, resolve } from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 
-import { features } from "../src/lib/env";
+import { loadConfig } from "../src/lib/settings/config";
 import { uploadVideo } from "../src/lib/youtube/upload";
 import type { SpiritualVideo } from "../src/lib/types";
 
@@ -219,7 +219,8 @@ async function main(): Promise<void> {
     // Checked before rendering, not at the upload call: rendering costs minutes
     // of CI time, and failing afterwards would burn all of it to reach an error
     // that was knowable up front.
-    if (!features.youtube) {
+    const cfg = await loadConfig();
+    if (!cfg.youtubeClientId || !cfg.youtubeClientSecret || !cfg.youtubeRefreshToken) {
       throw new Error(
         "YouTube is not connected. Open Settings, save the YouTube client ID and secret, " +
           "then press Connect YouTube.",

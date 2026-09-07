@@ -16,8 +16,7 @@ import {
   type GenerateContentResponse,
 } from "@google/genai";
 
-import { config, env } from "@/lib/env";
-import { buildPrompt, SYSTEM_INSTRUCTION, type PromptInput } from "@/lib/gemini/prompt";
+import { buildPrompt, systemInstruction, type PromptInput } from "@/lib/gemini/prompt";
 import type { GeneratedScript } from "@/lib/types";
 
 const RESPONSE_SCHEMA = {
@@ -69,11 +68,21 @@ const SAFETY_SETTINGS = [
   },
 ];
 
-let client: GoogleGenAI | null = null;
+/**
+ * Cached per API key. The key now comes from the database and can change
+ * without a redeploy, so a client cached against the old one would keep
+ * failing until the instance recycled.
+ */
+let client: { key: string; instance: GoogleGenAI } | null = null;
 
-function ai(): GoogleGenAI {
-  if (!client) client = new GoogleGenAI({ apiKey: env.geminiApiKey });
-  return client;
+function ai(apiKey: string): GoogleGenAI {
+  if (!apiKey) {
+    throw new GeminiError("No Gemini API key is set. Open Settings and add it.");
+  }
+  if (!client || client.key !== apiKey) {
+    client = { key: apiKey, instance: new GoogleGenAI({ apiKey }) };
+  }
+  return client.instance;
 }
 
 export class GeminiError extends Error {
@@ -114,16 +123,17 @@ function extractText(response: GenerateContentResponse): string {
  * a different topic instead.
  */
 export async function generateScript(input: PromptInput): Promise<GeneratedScript> {
+  const config = input.cfg;
   const prompt = buildPrompt(input);
   let lastError: unknown;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const response = await ai().models.generateContent({
+      const response = await ai(config.geminiApiKey).models.generateContent({
         model: config.geminiModel,
         contents: prompt,
         config: {
-          systemInstruction: SYSTEM_INSTRUCTION,
+          systemInstruction: systemInstruction(config),
           responseMimeType: "application/json",
           responseSchema: RESPONSE_SCHEMA,
           safetySettings: SAFETY_SETTINGS,

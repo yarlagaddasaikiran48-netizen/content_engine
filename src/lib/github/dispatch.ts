@@ -11,7 +11,7 @@
  * back to /api/publish/callback with the resulting YouTube id.
  */
 
-import { env } from "@/lib/env";
+import { loadConfig } from "@/lib/settings/config";
 
 export interface DispatchPayload {
   video_id: string;
@@ -19,6 +19,7 @@ export interface DispatchPayload {
 }
 
 export async function dispatchRender(payload: DispatchPayload): Promise<void> {
+  const env = await loadConfig();
   const url = `https://api.github.com/repos/${env.githubOwner}/${env.githubRepo}/dispatches`;
 
   const response = await fetch(url, {

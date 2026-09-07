@@ -13,8 +13,8 @@ import "dotenv/config";
 
 import { contentHash, jaccardSimilarity } from "@/lib/dedupe/hash";
 import { checkSafety } from "@/lib/safety/profanity";
-import { config } from "@/lib/env";
-import { IDEAL_WORDS, MAX_WORDS, MIN_WORDS, validateScript } from "@/lib/safety/validate";
+import { loadConfig, wordWindow } from "@/lib/settings/config";
+import { validateScript } from "@/lib/safety/validate";
 import { fetchGitaVerse } from "@/lib/sources/gita";
 import { buildHookContext } from "@/lib/sources/hook";
 import { computePanchang } from "@/lib/sources/panchang";
@@ -67,13 +67,15 @@ async function main(): Promise<void> {
   check("blocks model artefacts", !checkSafety("As an AI, I cannot do that").safe);
 
   console.log("\nScript validation");
-  const valid = validateScript(SAMPLE);
+  const cfg = await loadConfig();
+  const { ideal: IDEAL_WORDS, min: MIN_WORDS, max: MAX_WORDS } = wordWindow(cfg);
+  const valid = validateScript(SAMPLE, cfg);
   check(
     "word window is derived from config, not hardcoded",
-    IDEAL_WORDS === Math.round((config.targetSeconds * config.speechWordsPerMinute) / 60) &&
+    IDEAL_WORDS === Math.round((cfg.targetSeconds * cfg.ttsWordsPerMinute) / 60) &&
       MIN_WORDS < IDEAL_WORDS &&
       IDEAL_WORDS < MAX_WORDS,
-    `${config.targetSeconds}s at ${config.speechWordsPerMinute} wpm -> ideal ${IDEAL_WORDS}, accept ${MIN_WORDS}-${MAX_WORDS}`,
+    `${cfg.targetSeconds}s at ${cfg.ttsWordsPerMinute} wpm -> ideal ${IDEAL_WORDS}, accept ${MIN_WORDS}-${MAX_WORDS}`,
   );
 
   check(
@@ -81,22 +83,22 @@ async function main(): Promise<void> {
     valid.valid,
     `${valid.wordCount} words${valid.valid ? "" : `: ${valid.errors.join("; ")}`}`,
   );
-  check("rejects a too-short script", !validateScript({ ...SAMPLE, script_body: "Too short." }).valid);
+  check("rejects a too-short script", !validateScript({ ...SAMPLE, script_body: "Too short." }, cfg).valid);
   check(
     "rejects the wrong number of hashtags",
-    !validateScript({ ...SAMPLE, hashtags: ["#one"] }).valid,
+    !validateScript({ ...SAMPLE, hashtags: ["#one"] }, cfg).valid,
   );
   check(
     "rejects a call to action in the narration",
     !validateScript({
       ...SAMPLE,
       script_body: `${SAMPLE.script_body} Subscribe for more.`,
-    }).valid,
+    }, cfg).valid,
   );
   const stripped = validateScript({
     ...SAMPLE,
     script_body: `(pause) Narrator: ${SAMPLE.script_body} **emphasis**`,
-  });
+  }, cfg);
   check(
     "strips stage directions and markdown",
     !stripped.cleaned.script_body.includes("(pause)") &&

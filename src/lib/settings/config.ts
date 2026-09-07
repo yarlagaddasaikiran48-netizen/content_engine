@@ -14,11 +14,14 @@ import { readRawSettings } from "@/lib/settings/store";
 export interface AppConfig {
   geminiApiKey: string;
   geminiModel: string;
+  geminiThinkingBudget: number;
 
   youtubeClientId: string;
   youtubeClientSecret: string;
   youtubeRefreshToken: string;
   youtubePrivacy: string;
+  youtubeCategoryId: string;
+  youtubeMadeForKids: boolean;
 
   githubOwner: string;
   githubRepo: string;
@@ -34,9 +37,17 @@ export interface AppConfig {
   wordCountTolerance: number;
   ttsVoice: string;
   ttsRate: string;
+  ttsPitch: string;
+  ttsVolume: string;
   ttsWordsPerMinute: number;
   similarityThreshold: number;
   learningEnabled: boolean;
+  puranaRotation: boolean;
+  rotationEpoch: Date;
+  rotationDaysPerPurana: number;
+  maxGenerationAttempts: number;
+  audioBucket: string;
+  publishCallbackSecret: string;
 
   rejectTtlHours: number;
   cronSecret: string;
@@ -68,6 +79,13 @@ function asNumber(rows: Rows, key: string): number {
   return parsed;
 }
 
+/** An unparseable or blank date means the Unix epoch, never NaN. */
+function asDate(rows: Rows, key: string): Date {
+  const raw = resolve(rows, key);
+  const parsed = raw ? new Date(raw) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed : new Date(Date.UTC(1970, 0, 1));
+}
+
 function asBoolean(rows: Rows, key: string): boolean {
   return resolve(rows, key) === "true";
 }
@@ -96,11 +114,14 @@ export async function loadConfig(): Promise<AppConfig> {
   return {
     geminiApiKey: resolve(rows, "gemini_api_key"),
     geminiModel: resolve(rows, "gemini_model"),
+    geminiThinkingBudget: asNumber(rows, "gemini_thinking_budget"),
 
     youtubeClientId: resolve(rows, "youtube_client_id"),
     youtubeClientSecret: resolve(rows, "youtube_client_secret"),
     youtubeRefreshToken: resolve(rows, "youtube_refresh_token"),
     youtubePrivacy: resolve(rows, "youtube_privacy"),
+    youtubeCategoryId: resolve(rows, "youtube_category_id"),
+    youtubeMadeForKids: asBoolean(rows, "youtube_made_for_kids"),
 
     githubOwner: resolve(rows, "github_owner"),
     githubRepo: resolve(rows, "github_repo"),
@@ -115,9 +136,17 @@ export async function loadConfig(): Promise<AppConfig> {
     wordCountTolerance: asNumber(rows, "word_count_tolerance"),
     ttsVoice: resolve(rows, "tts_voice"),
     ttsRate: resolve(rows, "tts_rate"),
+    ttsPitch: resolve(rows, "tts_pitch"),
+    ttsVolume: resolve(rows, "tts_volume"),
     ttsWordsPerMinute: asNumber(rows, "tts_words_per_minute"),
     similarityThreshold: asNumber(rows, "similarity_threshold"),
     learningEnabled: asBoolean(rows, "learning_enabled"),
+    puranaRotation: asBoolean(rows, "purana_rotation"),
+    rotationEpoch: asDate(rows, "rotation_epoch"),
+    rotationDaysPerPurana: asNumber(rows, "rotation_days_per_purana"),
+    maxGenerationAttempts: asNumber(rows, "max_generation_attempts"),
+    audioBucket: resolve(rows, "supabase_audio_bucket"),
+    publishCallbackSecret: resolve(rows, "publish_callback_secret"),
 
     rejectTtlHours: asNumber(rows, "reject_ttl_hours"),
     cronSecret: resolve(rows, "cron_secret"),
