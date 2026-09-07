@@ -103,14 +103,21 @@ stable
 security definer
 set search_path = public
 as $$
+  -- The ordering and the limit belong to the INNER set: we want the most
+  -- recent p_lookback scripts, then the highest similarity among them. Sorting
+  -- outside the aggregate is both invalid SQL and the wrong intent -- it would
+  -- limit the single aggregate row rather than the rows being compared.
   select coalesce(max(similarity(v.script_body, p_body)), 0)::real
   from (
-    select script_body, created_at from public.spiritual_videos
-    union all
-    select script_body, published_at as created_at from public.published_archive
+    select script_body
+    from (
+      select script_body, created_at   from public.spiritual_videos
+      union all
+      select script_body, published_at from public.published_archive
+    ) recent
+    order by created_at desc
+    limit p_lookback
   ) v
-  order by v.created_at desc
-  limit p_lookback
 $$;
 
 -- ---------------------------------------------------------------------------
