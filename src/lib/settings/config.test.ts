@@ -93,18 +93,21 @@ describe("loadConfig", () => {
 
 describe("wordWindow", () => {
   it("reproduces the documented 30s window", async () => {
+    // Telugu at the measured 80 wpm: 40 words for thirty seconds, not the 74
+    // the English voice needed. One agglutinative word carries what English
+    // spends three or four on.
     const w = wordWindow(await loadConfig());
-    expect(w.ideal).toBe(74);
-    expect(w.min).toBe(63);
-    expect(w.max).toBe(85);
+    expect(w.ideal).toBe(40);
+    expect(w.min).toBe(34);
+    expect(w.max).toBe(46);
   });
 
   it("scales with the configured length", async () => {
     set("target_seconds", "60");
     const w = wordWindow(await loadConfig());
-    expect(w.ideal).toBe(148);
-    expect(w.min).toBe(126);
-    expect(w.max).toBe(170);
+    expect(w.ideal).toBe(80);
+    expect(w.min).toBe(68);
+    expect(w.max).toBe(92);
   });
 
   it("follows the voice's measured rate", async () => {

@@ -18,6 +18,7 @@
 
 import { loadConfig, wordWindow, type AppConfig } from "@/lib/settings/config";
 import { contentHash } from "@/lib/dedupe/hash";
+import { isFatalGenerationError } from "@/lib/pipeline/fatal";
 import { generateScript } from "@/lib/gemini/generate";
 import { buildHookContext } from "@/lib/sources/hook";
 import { fetchGitaVerse } from "@/lib/sources/gita";
@@ -406,12 +407,10 @@ export async function generateVideo(): Promise<GenerationOutcome> {
       await recordAttempt(topic?.topic_key ?? null, attempt, "error", message);
       if (topic) await releaseTopic(topic.topic_key);
 
-      // A configuration or credential failure will not fix itself on retry.
-      if (
-        message.includes("Missing environment variable") ||
-        message.includes("API key") ||
-        message.includes("claim_unused_topic failed")
-      ) {
+      // Configuration, credential and dead-model failures will not fix
+      // themselves on retry — stop rather than spend three more topics and
+      // three more API calls reaching the identical error.
+      if (isFatalGenerationError(message)) {
         return { ok: false, attempts: attempt, log, error: message };
       }
     }

@@ -77,10 +77,10 @@ export const env = {
 export const config = {
   audioBucket: optional("SUPABASE_AUDIO_BUCKET", "spiritual-audio"),
 
-  geminiModel: optional("GEMINI_MODEL", "gemini-2.5-flash"),
+  geminiModel: optional("GEMINI_MODEL", "gemini-3.6-flash"),
   geminiThinkingBudget: num("GEMINI_THINKING_BUDGET", 512),
 
-  ttsVoice: optional("TTS_VOICE", "en-IN-NeerjaNeural"),
+  ttsVoice: optional("TTS_VOICE", "te-IN-ShrutiNeural"),
   ttsRate: optional("TTS_RATE", "-4%"),
   ttsPitch: optional("TTS_PITCH", "+0Hz"),
   ttsVolume: optional("TTS_VOLUME", "+0%"),
@@ -113,7 +113,7 @@ export const config = {
    * rate -4% renders 26 words in 10.51s = 148 wpm. Retune this if you change
    * TTS_VOICE or TTS_RATE, and the word window follows.
    */
-  speechWordsPerMinute: num("TTS_WORDS_PER_MINUTE", 148),
+  speechWordsPerMinute: num("TTS_WORDS_PER_MINUTE", 80),
   /** How far either side of the ideal word count is still acceptable. */
   wordCountTolerance: num("WORD_COUNT_TOLERANCE", 0.15),
   similarityThreshold: num("SIMILARITY_THRESHOLD", 0.45),

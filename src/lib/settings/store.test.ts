@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { settingDef } from "@/lib/settings/catalogue";
 
 interface Row {
   key: string;
@@ -116,11 +117,11 @@ describe("maskedSettings", () => {
   });
 
   it("shows the effective value of an unset non-secret, not a blank", async () => {
-    // A blank field beside an engine happily using "gemini-2.5-flash" reads as
+    // A blank field beside an engine happily using the catalogue fallback reads as
     // broken, and invites the operator to retype a value that already applies.
     const masked = await maskedSettings();
     const model = masked.find((m) => m.key === "gemini_model")!;
-    expect(model.value).toBe("gemini-2.5-flash");
+    expect(model.value).toBe(settingDef("gemini_model").fallback);
     expect(model.isSet).toBe(false);
   });
 

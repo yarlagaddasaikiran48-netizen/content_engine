@@ -26,6 +26,32 @@ const PROFANITY = [
   "chutiya", "chutiye", "bhosdi", "bhosdike", "madarchod", "behenchod",
   "bhenchod", "gandu", "gaand", "randi", "harami", "kamina", "kutta sala",
   "saala", "haramzada", "lodu", "chodu",
+  // Romanised Telugu abuse. Latin script, so the word-boundary match below
+  // still applies to these.
+  "lanja", "lanjakodaka", "munda", "modda", "pooku", "denga", "dengey",
+  "yedava", "vedhava", "sachinodu", "gudda",
+];
+
+/**
+ * Telugu-script abuse.
+ *
+ * Kept separate because the English list's word-boundary match does not work
+ * here at all: JavaScript defines \b over [A-Za-z0-9_], so every Telugu
+ * character is a non-word character and /\bలంజ\b/ is false even for an exact
+ * standalone match. Reusing that pattern would produce a filter that matches
+ * nothing while appearing to work.
+ *
+ * Matched from the head of a word instead, which is also the right shape for
+ * an agglutinative language: the root keeps its spelling and grows a suffix,
+ * so anchoring the head catches every inflection without the false positives a
+ * bare substring search would bring.
+ *
+ * Deliberately short. Only unambiguous terms belong here — a word with an
+ * innocent everyday meaning would reject good scripts, and every rejection
+ * costs a topic and a model call.
+ */
+const TELUGU_PROFANITY = [
+  "లంజ", "పూకు", "మొడ్డ", "దెంగ", "ఎదవ", "వెధవ", "సచ్చినోడు",
 ];
 
 /** Slurs and demeaning terms — an automatic, unconditional rejection. */
@@ -107,6 +133,26 @@ function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * Zero-width joiners are common in Telugu input and split a word invisibly, so
+ * a term written with one would slip any literal match. Removing them is safe
+ * for detection; published text is never taken from here.
+ */
+export function stripJoiners(text: string): string {
+  return text.replace(/[​-‍﻿]/g, "");
+}
+
+/**
+ * Does `term` appear at the head of a word in `text`?
+ *
+ * Suffixes may follow — that is how Telugu inflects — but another Telugu
+ * letter may not precede, which stops a root matching inside an unrelated
+ * longer word.
+ */
+export function containsTeluguTerm(text: string, term: string): boolean {
+  return new RegExp(`(^|[^ఀ-౿])${escapeRegex(term)}`).test(text);
+}
+
 export function checkSafety(...texts: string[]): SafetyReport {
   const issues: SafetyIssue[] = [];
   const raw = texts.filter(Boolean).join("\n");
@@ -120,6 +166,13 @@ export function checkSafety(...texts: string[]): SafetyReport {
 
   for (const word of PROFANITY) {
     if (new RegExp(`\\b${escapeRegex(normalise(word))}\\b`).test(folded)) {
+      issues.push({ category: "profanity", detail: word });
+    }
+  }
+
+  const telugu = stripJoiners(raw);
+  for (const word of TELUGU_PROFANITY) {
+    if (containsTeluguTerm(telugu, word)) {
       issues.push({ category: "profanity", detail: word });
     }
   }
