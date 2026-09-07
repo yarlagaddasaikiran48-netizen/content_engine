@@ -455,3 +455,14 @@ audio {
   right: auto;
   transform: rotate(8deg);
 }
+
+/* Preview player: vertical video, capped so the Post button stays reachable
+   without scrolling on a phone. */
+.preview-player {
+  width: 100%;
+  max-height: 52vh;
+  aspect-ratio: 9 / 16;
+  border-radius: 10px;
+  background: #000;
+  object-fit: contain;
+}

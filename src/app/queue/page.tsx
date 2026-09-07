@@ -4,6 +4,7 @@ import { readQueue, type QueueData } from "@/lib/schedule/queue";
 export const dynamic = "force-dynamic";
 
 const EMPTY: QueueData = {
+  ready: [],
   waiting: [],
   inFlight: [],
   postingTimes: [],

@@ -2,6 +2,8 @@ export type VideoStatus =
   | "pending"
   | "approved"
   | "rendering"
+  // Rendered and watchable, not yet on YouTube.
+  | "ready"
   | "published"
   | "rejected"
   | "failed";
@@ -81,6 +83,12 @@ export interface SpiritualVideo {
   seen_at: string | null;
   /** Which configured slot this filled, e.g. "00:00". */
   published_slot: string | null;
+
+  // ---- rendered file, watchable before publishing (migration 003) --------
+  video_path: string | null;
+  video_url: string | null;
+  video_bytes: number | null;
+  rendered_at: string | null;
 
   model: string;
 }

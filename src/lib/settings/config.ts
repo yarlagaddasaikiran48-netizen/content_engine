@@ -19,6 +19,7 @@ export interface AppConfig {
   youtubeClientId: string;
   youtubeClientSecret: string;
   youtubeRefreshToken: string;
+  autoPublish: boolean;
   youtubePrivacy: string;
   youtubeCategoryId: string;
   youtubeMadeForKids: boolean;
@@ -119,6 +120,7 @@ export async function loadConfig(): Promise<AppConfig> {
     youtubeClientId: resolve(rows, "youtube_client_id"),
     youtubeClientSecret: resolve(rows, "youtube_client_secret"),
     youtubeRefreshToken: resolve(rows, "youtube_refresh_token"),
+    autoPublish: asBoolean(rows, "auto_publish"),
     youtubePrivacy: resolve(rows, "youtube_privacy"),
     youtubeCategoryId: resolve(rows, "youtube_category_id"),
     youtubeMadeForKids: asBoolean(rows, "youtube_made_for_kids"),

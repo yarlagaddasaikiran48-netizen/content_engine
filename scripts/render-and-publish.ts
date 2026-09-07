@@ -25,7 +25,6 @@ import { join, resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
 
 import { loadConfig } from "../src/lib/settings/config";
-import { uploadVideo } from "../src/lib/youtube/upload";
 import type { SpiritualVideo } from "../src/lib/types";
 
 const WIDTH = 1080;
@@ -347,28 +346,39 @@ async function main(): Promise<void> {
     const rendered = readFileSync(outputPath);
     console.log(`  rendered ${(rendered.length / 1024 / 1024).toFixed(2)} MB`);
 
-    // ---- 6. publish ----
-    console.log("  uploading to YouTube…");
-    const description = `${video.seo_description}\n\n${video.hashtags.join(" ")}`;
-    const result = await uploadVideo({
-      video: rendered,
-      title: video.title,
-      description,
-      tags: video.hashtags,
-    });
+    // ---- 6. store the MP4 for review ----
+    //
+    // Rendering stops here on purpose. The file goes to storage and the row is
+    // marked "ready", so it can be watched before it reaches the channel.
+    // Publishing is a separate job, fired by the Post button.
+    const objectPath = `${new Date().toISOString().slice(0, 10)}/${videoId}.mp4`;
+    console.log("  uploading the MP4 to storage…");
 
-    console.log(`  published: ${result.shortsUrl}`);
-    await report("published", { youtube_video_id: result.videoId });
+    const { error: storeError } = await supabase.storage
+      .from("spiritual-video")
+      .upload(objectPath, rendered, { contentType: "video/mp4", upsert: true });
+
+    if (storeError) {
+      throw new Error(`Could not store the rendered video: ${storeError.message}`);
+    }
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("spiritual-video").getPublicUrl(objectPath);
+
+    console.log(`  ready to preview: ${publicUrl}`);
+    await report("ready", { video_url: publicUrl });
 
     // Belt and braces: write the result directly too, in case the callback
     // could not reach the deployment.
     await supabase
       .from("spiritual_videos")
       .update({
-        status: "published",
-        youtube_video_id: result.videoId,
-        youtube_url: result.shortsUrl,
-        published_at: new Date().toISOString(),
+        status: "ready",
+        video_path: objectPath,
+        video_url: publicUrl,
+        video_bytes: rendered.length,
+        rendered_at: new Date().toISOString(),
       })
       .eq("id", videoId);
 

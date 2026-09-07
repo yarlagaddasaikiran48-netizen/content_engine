@@ -143,6 +143,17 @@ export const SETTING_DEFS: readonly SettingDef[] = [
     fallback: "false",
   },
   {
+    key: "auto_publish",
+    group: "publishing",
+    label: "Post automatically at each slot",
+    kind: "boolean",
+    secret: false,
+    // Off by default: the operator asked to watch each video before it goes
+    // out, and a default that publishes unseen work would defeat that.
+    fallback: "false",
+    help: "Off means videos render and wait for you to press Post. On means each slot posts the oldest ready video by itself.",
+  },
+  {
     key: "youtube_privacy",
     group: "publishing",
     label: "Privacy",
