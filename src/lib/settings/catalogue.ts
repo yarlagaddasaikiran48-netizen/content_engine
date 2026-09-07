@@ -47,7 +47,7 @@ export const SETTING_DEFS: readonly SettingDef[] = [
     kind: "text",
     secret: false,
     fallbackEnv: "GEMINI_MODEL",
-    fallback: "gemini-2.5-flash",
+    fallback: "gemini-3.6-flash",
   },
   {
     key: "youtube_client_id",
@@ -389,7 +389,7 @@ export function settingDef(key: string): SettingDef {
  *
  * It lives here rather than in the config loader because the Settings form
  * needs it too — a field showing blank when the engine is actually using
- * "gemini-2.5-flash" reads as broken. Two copies of this rule would drift.
+ * the catalogue fallback reads as broken. Two copies of this rule would drift.
  */
 export function effectiveValue(def: SettingDef, stored: string | null | undefined): string {
   if (stored !== undefined && stored !== null && stored !== "") return stored;

@@ -77,7 +77,7 @@ export const env = {
 export const config = {
   audioBucket: optional("SUPABASE_AUDIO_BUCKET", "spiritual-audio"),
 
-  geminiModel: optional("GEMINI_MODEL", "gemini-2.5-flash"),
+  geminiModel: optional("GEMINI_MODEL", "gemini-3.6-flash"),
   geminiThinkingBudget: num("GEMINI_THINKING_BUDGET", 512),
 
   ttsVoice: optional("TTS_VOICE", "en-IN-NeerjaNeural"),
