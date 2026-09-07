@@ -13,7 +13,8 @@ import "dotenv/config";
 
 import { contentHash, jaccardSimilarity } from "@/lib/dedupe/hash";
 import { checkSafety } from "@/lib/safety/profanity";
-import { MAX_WORDS, MIN_WORDS, validateScript } from "@/lib/safety/validate";
+import { config } from "@/lib/env";
+import { IDEAL_WORDS, MAX_WORDS, MIN_WORDS, validateScript } from "@/lib/safety/validate";
 import { fetchGitaVerse } from "@/lib/sources/gita";
 import { buildHookContext } from "@/lib/sources/hook";
 import { computePanchang } from "@/lib/sources/panchang";
@@ -23,7 +24,7 @@ import {
   puranaForDate,
   rotationFrom,
 } from "@/lib/sources/mahapuranas";
-import { assertUniqueKeys, CORPUS } from "@/lib/sources/puranas";
+import { CORPUS } from "@/lib/sources/puranas";
 
 let failures = 0;
 
@@ -67,6 +68,14 @@ async function main(): Promise<void> {
 
   console.log("\nScript validation");
   const valid = validateScript(SAMPLE);
+  check(
+    "word window is derived from config, not hardcoded",
+    IDEAL_WORDS === Math.round((config.targetSeconds * config.speechWordsPerMinute) / 60) &&
+      MIN_WORDS < IDEAL_WORDS &&
+      IDEAL_WORDS < MAX_WORDS,
+    `${config.targetSeconds}s at ${config.speechWordsPerMinute} wpm -> ideal ${IDEAL_WORDS}, accept ${MIN_WORDS}-${MAX_WORDS}`,
+  );
+
   check(
     `accepts a good script (${MIN_WORDS}-${MAX_WORDS} words)`,
     valid.valid,
@@ -113,9 +122,16 @@ async function main(): Promise<void> {
   check("unrelated text scores low", unrelated < 0.2, unrelated.toFixed(3));
 
   console.log("\nCorpus");
-  assertUniqueKeys();
+  // assertUniqueKeys() throws, which would abort the run instead of reporting a
+  // failure, so the uniqueness invariant is recomputed here where check() can
+  // report it alongside everything else.
+  const keys = new Set(CORPUS.map((entry) => entry.key));
+  check(
+    "curated topics have unique keys",
+    keys.size === CORPUS.length,
+    `${keys.size} unique of ${CORPUS.length} topics`,
+  );
   const scriptures = [...new Set(CORPUS.map((entry) => entry.scripture))];
-  check("curated topics have unique keys", true, `${CORPUS.length} topics`);
   check("covers multiple scriptures", scriptures.length >= 10, `${scriptures.length} books`);
   console.log(`        ${scriptures.join(", ")}`);
 

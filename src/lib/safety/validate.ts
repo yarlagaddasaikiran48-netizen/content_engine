@@ -2,22 +2,31 @@
  * Structural validation of a generated script.
  *
  * Gemini returns JSON matching a schema, so the *shape* is guaranteed. What is
- * not guaranteed is that the content is usable: the right spoken length for a
- * 30-second Short, a title that fits YouTube's limit, exactly five clean
+ * not guaranteed is that the content is usable: the right spoken length for
+ * the configured Short duration, a title that fits YouTube's limit, exactly five clean
  * hashtags, and no stage directions left in the narration.
  */
 
+import { config } from "@/lib/env";
 import { checkSafety, type SafetyIssue } from "@/lib/safety/profanity";
 import type { GeneratedScript } from "@/lib/types";
 
 /**
- * Measured, not guessed: en-IN-NeerjaNeural at rate -4% renders 26 words in
- * 10.51 seconds — 148 words per minute. A 30-second script is therefore ~74
- * words, and this window keeps the spoken result between roughly 27 and 35
- * seconds, which is the sweet spot for a Short.
+ * The acceptable spoken length, derived rather than hardcoded.
+ *
+ * The rate is measured, not guessed: en-IN-NeerjaNeural at rate -4% renders 26
+ * words in 10.51 seconds — 148 words per minute. Multiply by TARGET_SECONDS to
+ * get the ideal length, then allow a tolerance either side.
+ *
+ * At the defaults (30s, 148 wpm, +/-15%) that is 74 words ideal, 63 to 85
+ * accepted. Change TARGET_SECONDS to 45 and the window follows automatically;
+ * switch to a different voice or rate and TTS_WORDS_PER_MINUTE retunes it.
  */
-export const MIN_WORDS = 66;
-export const MAX_WORDS = 86;
+export const IDEAL_WORDS = Math.round(
+  (config.targetSeconds * config.speechWordsPerMinute) / 60,
+);
+export const MIN_WORDS = Math.round(IDEAL_WORDS * (1 - config.wordCountTolerance));
+export const MAX_WORDS = Math.round(IDEAL_WORDS * (1 + config.wordCountTolerance));
 
 /** YouTube hard limits. */
 const MAX_TITLE_CHARS = 100;
@@ -98,10 +107,10 @@ export function validateScript(script: GeneratedScript): ValidationResult {
   // ---- body ----
   const wordCount = countWords(body);
   if (wordCount < MIN_WORDS) {
-    errors.push(`Script is ${wordCount} words; too short for 30 seconds (minimum ${MIN_WORDS}).`);
+    errors.push(`Script is ${wordCount} words; too short for ${config.targetSeconds} seconds (minimum ${MIN_WORDS}).`);
   }
   if (wordCount > MAX_WORDS) {
-    errors.push(`Script is ${wordCount} words; too long for 30 seconds (maximum ${MAX_WORDS}).`);
+    errors.push(`Script is ${wordCount} words; too long for ${config.targetSeconds} seconds (maximum ${MAX_WORDS}).`);
   }
   if (/\b(subscribe|like and share|hit the bell|comment below)\b/i.test(body)) {
     errors.push("Narration contains a call to action; that belongs in the description, not the audio.");

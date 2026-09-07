@@ -90,7 +90,20 @@ export const config = {
   /** Days spent on each Purana before advancing. */
   rotationDaysPerPurana: num("ROTATION_DAYS_PER_PURANA", 1),
 
+  /**
+   * Target spoken length of a Short, in seconds. Everything downstream that
+   * cares about length derives from this — the word window in the validator,
+   * the guidance in the prompt, the render duration hint.
+   */
   targetSeconds: num("TARGET_SECONDS", 30),
+  /**
+   * Measured speaking rate of the configured voice. en-IN-NeerjaNeural at
+   * rate -4% renders 26 words in 10.51s = 148 wpm. Retune this if you change
+   * TTS_VOICE or TTS_RATE, and the word window follows.
+   */
+  speechWordsPerMinute: num("TTS_WORDS_PER_MINUTE", 148),
+  /** How far either side of the ideal word count is still acceptable. */
+  wordCountTolerance: num("WORD_COUNT_TOLERANCE", 0.15),
   similarityThreshold: num("SIMILARITY_THRESHOLD", 0.45),
   maxGenerationAttempts: num("MAX_GENERATION_ATTEMPTS", 4),
 

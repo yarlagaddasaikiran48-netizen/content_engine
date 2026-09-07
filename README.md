@@ -272,7 +272,14 @@ Two details worth knowing if you modify it:
   returns HTTP 101, without the `Origin` it fails with a bare 1006.
 
 Measured: `en-IN-NeerjaNeural` at `rate=-4%` reads **148 words per minute**, so
-a 30-second script is ~74 words. The validator enforces 66–86.
+a 30-second script is ~74 words; the validator accepts 63–85.
+
+None of those three numbers is hardcoded. The window is computed as
+`TARGET_SECONDS × TTS_WORDS_PER_MINUTE / 60`, plus or minus
+`WORD_COUNT_TOLERANCE`, and the same figures are injected into the prompt — so
+changing `TARGET_SECONDS=45` retunes the generator and the validator together
+(ideal 111, window 94–128), and switching to a slower Hindi voice is a matter of
+retuning `TTS_WORDS_PER_MINUTE`.
 
 Other Indian voices available: `en-IN-NeerjaExpressiveNeural`,
 `en-IN-PrabhatNeural` (male), `hi-IN-SwaraNeural`, `hi-IN-MadhurNeural`, plus

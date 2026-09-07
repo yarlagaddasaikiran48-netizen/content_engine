@@ -24,6 +24,7 @@ import { join, resolve } from "node:path";
 
 import { createClient } from "@supabase/supabase-js";
 
+import { features } from "../src/lib/env";
 import { uploadVideo } from "../src/lib/youtube/upload";
 import type { SpiritualVideo } from "../src/lib/types";
 
@@ -215,6 +216,16 @@ async function main(): Promise<void> {
   });
 
   try {
+    // Checked before rendering, not at the upload call: rendering costs minutes
+    // of CI time, and failing afterwards would burn all of it to reach an error
+    // that was knowable up front.
+    if (!features.youtube) {
+      throw new Error(
+        "YouTube credentials are missing. Set YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET and " +
+          "YOUTUBE_REFRESH_TOKEN (run `npm run youtube:token` to obtain the refresh token).",
+      );
+    }
+
     console.log(`Rendering ${videoId}`);
     await report("rendering");
 

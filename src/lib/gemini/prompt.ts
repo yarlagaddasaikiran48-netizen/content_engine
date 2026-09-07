@@ -11,6 +11,7 @@
 import { MASTER_SYSTEM_PROMPT } from "@/lib/gemini/master-prompt";
 import { PURANA_BY_NAME } from "@/lib/sources/mahapuranas";
 import type { HookContext, Topic } from "@/lib/types";
+import { config } from "@/lib/env";
 import { MAX_WORDS, MIN_WORDS } from "@/lib/safety/validate";
 
 /**
@@ -84,7 +85,7 @@ ${avoidAngles.map((angle) => `- ${angle}`).join("\n")}`);
   }
 
   sections.push(`YOUR TASK
-Write the script for this passage. The narration must be between ${MIN_WORDS} and ${MAX_WORDS} words — that is 30 seconds of speech, and it will be rejected outside that range. Count your words before answering.
+Write the script for this passage. The narration must be between ${MIN_WORDS} and ${MAX_WORDS} words — that is ${config.targetSeconds} seconds of speech, and it will be rejected outside that range. Count your words before answering.
 
 Return JSON with exactly these fields:
   title           — the YouTube title

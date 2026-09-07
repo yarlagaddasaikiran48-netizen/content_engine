@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { config as env } from "@/lib/env";
+
 /**
  * Optional password gate.
  *
@@ -24,7 +26,7 @@ const PROTECTED_PREFIXES = [
 ];
 
 export function middleware(request: NextRequest) {
-  const password = process.env.DASHBOARD_PASSWORD;
+  const password = env.dashboardPassword;
   if (!password) return NextResponse.next();
 
   const { pathname } = request.nextUrl;
