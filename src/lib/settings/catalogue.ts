@@ -206,7 +206,7 @@ export const SETTING_DEFS: readonly SettingDef[] = [
     kind: "text",
     secret: false,
     fallbackEnv: "TTS_VOICE",
-    fallback: "en-IN-NeerjaNeural",
+    fallback: "te-IN-ShrutiNeural",
   },
   {
     key: "tts_rate",
@@ -226,7 +226,7 @@ export const SETTING_DEFS: readonly SettingDef[] = [
     min: 60,
     max: 260,
     fallbackEnv: "TTS_WORDS_PER_MINUTE",
-    fallback: "148",
+    fallback: "80",
     help: "Retune this if you change voice or rate; the word window follows it.",
   },
   {

@@ -9,25 +9,42 @@
 
 import type { AppConfig } from "@/lib/settings/config";
 import { wordWindow } from "@/lib/settings/config";
-import { checkSafety, type SafetyIssue } from "@/lib/safety/profanity";
+import { checkSafety, stripJoiners, type SafetyIssue } from "@/lib/safety/profanity";
+import { isPredominantlyTelugu } from "@/lib/safety/language";
 import type { GeneratedScript } from "@/lib/types";
 
 /**
  * The acceptable spoken length, derived rather than hardcoded.
  *
- * The rate is measured, not guessed: en-IN-NeerjaNeural at rate -4% renders 26
- * words in 10.51 seconds — 148 words per minute. Multiply by TARGET_SECONDS to
+ * The rate is measured, not guessed: te-IN-ShrutiNeural at rate -4% renders 106
+ * words in 79.82 seconds — 80 words per minute. Multiply by TARGET_SECONDS to
  * get the ideal length, then allow a tolerance either side.
  *
- * At the defaults (30s, 148 wpm, +/-15%) that is 74 words ideal, 63 to 85
+ * At the defaults (30s, 80 wpm, +/-15%) that is 40 words ideal, 34 to 46
  * accepted. Change TARGET_SECONDS to 45 and the window follows automatically;
  * switch to a different voice or rate and TTS_WORDS_PER_MINUTE retunes it.
+ *
+ * Telugu runs at barely half the English rate this channel started on — 80 wpm
+ * against 148 — because one agglutinative word carries what English needs three
+ * or four for. Carrying the English number over would have asked for roughly
+ * twice the speech the target allows, and every script would have failed the
+ * duration gate. Re-measure with scripts/tts:test if the voice or rate changes.
  */
 /** Kept as a function of config rather than a module constant, because the
  *  target length is now editable at runtime from the Settings page. */
 export function words(cfg: AppConfig) {
   return wordWindow(cfg);
 }
+
+/**
+ * Calls to action in Telugu. These are the English words as Telugu speakers
+ * actually write them, spelled in Telugu letters — which is how the model will
+ * produce them if it produces them at all. Matched after zero-width joiners are
+ * stripped, since those split a word invisibly.
+ */
+const TELUGU_CTA = [
+  "సబ్స్క్రైబ్", "లైక్ చేయ", "షేర్ చేయ", "కామెంట్ చేయ", "ఫాలో అవ్వ", "ఫాలో చేయ",
+];
 
 /** YouTube hard limits. */
 const MAX_TITLE_CHARS = 100;
@@ -107,6 +124,15 @@ export function validateScript(script: GeneratedScript, cfg: AppConfig): Validat
   }
 
   // ---- body ----
+  // The alphabet comes first: every other check below passes happily on
+  // English, and the mistake only becomes audible in the finished MP3.
+  if (!isPredominantlyTelugu(body)) {
+    errors.push(
+      "Narration is not written in Telugu script. The te-IN voice reads only the " +
+        "Telugu alphabet, so English or romanised Telugu produces unusable audio.",
+    );
+  }
+
   const wordCount = countWords(body);
   if (wordCount < MIN_WORDS) {
     errors.push(`Script is ${wordCount} words; too short for ${cfg.targetSeconds} seconds (minimum ${MIN_WORDS}).`);
@@ -114,7 +140,11 @@ export function validateScript(script: GeneratedScript, cfg: AppConfig): Validat
   if (wordCount > MAX_WORDS) {
     errors.push(`Script is ${wordCount} words; too long for ${cfg.targetSeconds} seconds (maximum ${MAX_WORDS}).`);
   }
-  if (/\b(subscribe|like and share|hit the bell|comment below)\b/i.test(body)) {
+  const joined = stripJoiners(body);
+  const hasCta =
+    /\b(subscribe|like and share|hit the bell|comment below)\b/i.test(body) ||
+    TELUGU_CTA.some((phrase) => joined.includes(phrase));
+  if (hasCta) {
     errors.push("Narration contains a call to action; that belongs in the description, not the audio.");
   }
 
