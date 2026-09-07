@@ -395,6 +395,41 @@ Ledger runway at two videos per day is roughly one year.
 
 ---
 
+## 12b. Known gap: the picture does not match the words
+
+**Identified, not yet designed. No approved scope below — recorded so it is not
+lost.**
+
+Investigation of `render/render_short.py` found three separate reasons the
+visuals do not follow the script:
+
+1. **One image for the whole video.** A single background gets a slow Ken Burns
+   zoom across the entire duration (`ken_burns_clip`, line 316). The story
+   turns; the picture does not. At 60 seconds this is far more exposed than at
+   30.
+2. **The search query ignores the script.** The Pexels query is built as
+   `f"{row['scripture']} painting art"` (line 561) — the *name of the
+   scripture*, never the scene. A script about a man who cannot stop checking
+   on a deer is illustrated by a search for "Vishnu Purana painting art".
+3. **The source has almost none of this imagery.** Pexels is a stock photo
+   library. Indian Puranic art is barely represented, so the query usually
+   returns something irrelevant or nothing, and `generate_background()` then
+   produces an abstract gradient. Without `PEXELS_API_KEY` set, that gradient
+   is the *only* path — every video in the channel looks identical.
+
+Directions worth weighing when this is designed:
+
+- **Per-beat visuals.** Three to five images per video, cut on the beat sheet
+  from §7.1, so the picture changes when the story does.
+- **A source that actually holds the art.** Wikimedia Commons carries
+  public-domain Ravi Varma and Puranic painting; free, no key, correctly
+  licensed, and it depicts the actual deities and episodes.
+- **Generated imagery.** An image model can render the exact described scene.
+  Best alignment by far, and the only option here that is not free.
+- **Script-derived queries.** Have the model emit a short visual description
+  per beat alongside the script, rather than inferring one from the scripture
+  name.
+
 ## 13. Assumptions
 
 1. Posting times are IST unless `posting_timezone` says otherwise.
