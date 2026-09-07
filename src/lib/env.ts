@@ -1,5 +1,17 @@
 /**
- * Central, typed access to configuration.
+ * Bootstrap configuration.
+ *
+ * MIGRATION IN PROGRESS. Configuration now lives in the database — see
+ * src/lib/settings/config.ts and `loadConfig()`. Two categories are allowed to
+ * stay here permanently:
+ *
+ *  - Values needed to *reach* the database (the Supabase URL and service key).
+ *    A database cannot hold its own password.
+ *  - DASHBOARD_PASSWORD, read by edge middleware, which cannot decrypt.
+ *
+ * Everything else below is superseded and will be deleted once its call sites
+ * read `loadConfig()` instead. Until then both paths exist, and the database
+ * value wins wherever a call site has already been migrated.
  *
  * Rules of the house:
  *  - `required()` throws loudly at call time (never at import time, so a

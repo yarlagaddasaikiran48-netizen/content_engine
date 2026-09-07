@@ -77,12 +77,12 @@ before it is ever stored or spoken.
 │   │   └── pipeline/generate-video.ts   the orchestrator
 │   └── middleware.ts                    optional password gate (off by default)
 ├── supabase/schema.sql                  tables, functions, RLS, storage bucket
+├── supabase/migrations/                 run in order, after schema.sql
 ├── scripts/
 │   ├── seed-topics.ts                   load 784 topics into the ledger
-│   ├── get-youtube-token.ts             one-time OAuth helper
 │   ├── render-and-publish.ts            FFmpeg render + YouTube upload
 │   ├── test-tts.ts                      voice smoke test
-│   └── self-test.ts                     29 offline checks
+│   └── self-test.ts                     28 offline checks
 ├── render/
 │   ├── render_short.py                  local Ken Burns + captions renderer
 │   ├── minimal_example.py               the 20-line audio + background version
@@ -114,7 +114,11 @@ npm run selftest        # 29 checks, needs no credentials
 2. **SQL Editor → New query** → paste all of `supabase/schema.sql` → **Run**.
    This creates the tables, the three duplicate-defence functions, RLS policies
    and the public `spiritual-audio` storage bucket.
-3. **Project Settings → API** — copy into `.env.local`:
+3. Run each file in `supabase/migrations/` in order, in the same editor.
+   `001_settings_and_scheduling.sql` adds the encrypted settings table, the
+   scheduler lock and the publish-queue columns. Every migration is idempotent
+   and safe to re-run.
+4. **Project Settings → API** — copy into `.env.local`:
    - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
    - `anon` `public` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY` *(secret — never expose)*
@@ -126,8 +130,15 @@ npm run selftest        # 29 checks, needs no credentials
 
 ### 2. Gemini (free)
 
-Get a key at [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
-→ `GEMINI_API_KEY`.
+Get a key at [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey).
+
+Paste it into **Settings → Connections** in the running app, where it is stored
+encrypted and can be changed from a phone.
+
+> **While the config migration is in progress**, also keep `GEMINI_API_KEY` in
+> `.env.local`. The generation pipeline still reads the environment directly
+> and throws when it is missing; only the YouTube connection reads Settings so
+> far. Once that migration lands, the environment copy can be deleted.
 
 ### 3. Seed the topic ledger
 
@@ -148,16 +159,20 @@ keep their state and are never handed out again.
 1. [console.cloud.google.com](https://console.cloud.google.com) → new project.
 2. **APIs & Services → Library** → enable **YouTube Data API v3**.
 3. **OAuth consent screen** → External → add your own email under *Test users*.
-4. **Credentials → Create OAuth client ID → Desktop app** → copy the ID and
-   secret into `.env.local`.
-5. Mint the refresh token:
+4. **APIs & Services → Library** → also enable **YouTube Analytics API**
+   (the Performance page cannot read retention without it).
+5. **Credentials → Create OAuth client ID → Web application**. Under
+   *Authorised redirect URIs* add:
 
-```bash
-npm run auth:youtube
-```
+   ```
+   https://your-app.vercel.app/api/youtube/callback
+   ```
 
-A browser opens, you approve, and the refresh token is printed. Paste it into
-`YOUTUBE_REFRESH_TOKEN`.
+   Add `http://localhost:3000/api/youtube/callback` too if you develop locally.
+   It must match byte for byte.
+6. Copy the client ID and secret into **Settings → Connections** in the app.
+7. Press **Connect YouTube**. Approve, and the refresh token is stored
+   encrypted for you — there is no longer a terminal step and nothing to paste.
 
 > While the consent screen is in *Testing*, Google expires refresh tokens after
 > **7 days**. Hit **Publish app** on the consent screen to make it permanent —
@@ -433,12 +448,12 @@ background into a synced MP4, nothing else.
 | Command | Purpose |
 |---|---|
 | `npm run dev` | Local dashboard at `/dashboard` |
-| `npm run selftest` | 29 offline checks — run this first when something looks wrong |
+| `npm run selftest` | 28 offline checks — run this first when something looks wrong |
 | `npm run seed:topics` | Load / top up the topic ledger |
 | `npm run tts:test` | Synthesise a sample MP3 to `tmp-tts/` |
 | `npm run tts:test -- --voices` | List every available voice |
-| `npm run auth:youtube` | Mint a YouTube refresh token |
 | `npm run render -- --id=<uuid>` | Render + publish one item locally |
+| `npm test` | Unit tests (Vitest) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `python render/render_short.py --help` | Local renderer options |
 
@@ -455,7 +470,7 @@ design. Raise `SIMILARITY_THRESHOLD` toward `0.6`, or add topics.
 
 **`invalid_grant` on upload** — the refresh token expired. If your OAuth
 consent screen is still in *Testing*, tokens die after 7 days: publish the app,
-then re-run `npm run auth:youtube`.
+then press **Connect YouTube** in Settings again.
 
 **Edge TTS returns 403** — the system clock is off by more than a few minutes.
 The client corrects and retries automatically; if it persists, fix the clock.
