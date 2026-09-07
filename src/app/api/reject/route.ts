@@ -1,4 +1,5 @@
 import { fail, messageOf, ok } from "@/lib/api";
+import { loadConfig } from "@/lib/settings/config";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { SpiritualVideo } from "@/lib/types";
 
@@ -13,6 +14,7 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(request: Request) {
   try {
+    const cfg = await loadConfig();
     const body = (await request.json().catch(() => ({}))) as {
       id?: string;
       reason?: string;
@@ -38,6 +40,10 @@ export async function POST(request: Request) {
         status: "rejected",
         rejected_at: new Date().toISOString(),
         rejection_reason: body.reason?.slice(0, 500) ?? null,
+        // A reject is a deferral, not a deletion. The card keeps cycling
+        // through the deck until this moment, then the scheduler removes it
+        // and hands its scripture verse back to the pool.
+        expires_at: new Date(Date.now() + cfg.rejectTtlHours * 3_600_000).toISOString(),
       })
       .eq("id", body.id)
       .select()
