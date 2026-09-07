@@ -18,7 +18,19 @@
  * is handed out at most once, ever.
  */
 
+import { citationUrlFor, PURANA_BY_KEY } from "@/lib/sources/mahapuranas";
 import type { TopicSource } from "@/lib/types";
+
+/**
+ * Resolve a Purana's best citation from the canonical registry: its open full
+ * text where one exists, otherwise its reference page. Keeping this in one
+ * function means no entry below carries a URL of its own to rot.
+ */
+function cite(puranaKey: string): string {
+  const purana = PURANA_BY_KEY.get(puranaKey);
+  if (!purana) throw new Error(`Unknown Maha Purana key: ${puranaKey}`);
+  return citationUrlFor(purana);
+}
 
 export interface CorpusEntry {
   /** Stable unique key — also the primary key in topic_ledger. */
@@ -884,6 +896,231 @@ export const CORPUS: CorpusEntry[] = [
       "The ferryman refuses to let Rama board until he has washed his feet — having heard what happened to a stone that touched that dust, he is not risking his only boat. Devotion here arrives as affection and wit rather than solemnity.",
     citationUrl: RAMAYANA,
     weight: 125,
+  },
+
+  // ===========================================================================
+  // The remaining Maha Puranas.
+  //
+  // No open full-text translation is hosted for these five, so `cite()`
+  // resolves each to its canonical reference. Every entry below is the text's
+  // own namesake or framing narrative — the thing that Purana is *for* — so
+  // the daily rotation never lands on a book with nothing to say.
+  // ===========================================================================
+  {
+    key: "purana:matsya:manu-flood",
+    source: "purana",
+    scripture: "Matsya Purana",
+    reference: "Opening chapters — the Matsya avatara",
+    title: "The fish that asked to be saved first",
+    theme: "heeding a warning while there is still time",
+    summary:
+      "A tiny fish in Manu's cupped hands begs for protection, then outgrows every bowl, pot, lake and river he moves it to, until it fills the ocean. Only then does it tell him a flood is coming and to build the boat. The rescue was rehearsed long before the emergency.",
+    citationUrl: cite("matsya"),
+    weight: 130,
+  },
+  {
+    key: "purana:matsya:enumeration",
+    source: "purana",
+    scripture: "Matsya Purana",
+    reference: "Chapter 53",
+    title: "The book that counts the other books",
+    theme: "knowing the shape of a tradition",
+    summary:
+      "The Matsya Purana is the text that lists all eighteen Maha Puranas and their verse counts, totalling some four hundred thousand verses. It is the tradition pausing to take stock of itself and hand the reader a map.",
+    citationUrl: cite("matsya"),
+    weight: 100,
+  },
+  {
+    key: "purana:matsya:dana",
+    source: "purana",
+    scripture: "Matsya Purana",
+    reference: "Chapters on dana and vrata",
+    title: "Giving measured by what it costs you",
+    theme: "sincerity in generosity",
+    summary:
+      "Long sections of the Matsya Purana set out the forms of giving and the vows that structure a year. The recurring test is not the size of the gift but whether the giver felt its absence, and whether the receiver was left with their dignity.",
+    citationUrl: cite("matsya"),
+    weight: 105,
+  },
+  {
+    key: "purana:kurma:tortoise",
+    source: "purana",
+    scripture: "Kurma Purana",
+    reference: "Framing narrative — the Kurma avatara",
+    title: "The one holding everything up is underwater",
+    theme: "invisible support",
+    summary:
+      "When Mount Mandara began to sink during the churning of the ocean, Vishnu took the form of a tortoise and went beneath it. Gods and demons pulled at the surface and took the credit. The thing that made it possible was never once seen.",
+    citationUrl: cite("kurma"),
+    weight: 130,
+  },
+  {
+    key: "purana:kurma:ishvara-gita",
+    source: "purana",
+    scripture: "Kurma Purana",
+    reference: "Uttara Vibhaga — the Ishvara Gita",
+    title: "The other Gita, spoken by Shiva",
+    theme: "knowledge and the settled mind",
+    summary:
+      "The Kurma Purana carries the Ishvara Gita, a Shaiva counterpart to the Bhagavad Gita in which Shiva teaches the sages of the Daruka forest. Its instruction is the same at the root: know what you actually are, and act without agitation.",
+    citationUrl: cite("kurma"),
+    weight: 110,
+  },
+  {
+    key: "purana:kurma:ashramas",
+    source: "purana",
+    scripture: "Kurma Purana",
+    reference: "Chapters on dharma and the ashramas",
+    title: "There is a season for each thing you owe",
+    theme: "life stages and duty",
+    summary:
+      "The Kurma Purana lays out the stages of a life — study, household, withdrawal, renunciation — and insists each has its own duties. Trying to live the fourth while owing the second is presented not as devotion but as evasion.",
+    citationUrl: cite("kurma"),
+    weight: 105,
+  },
+  {
+    key: "purana:varaha:lifting-earth",
+    source: "purana",
+    scripture: "Varaha Purana",
+    reference: "Framing narrative — the Varaha avatara",
+    title: "The earth was carried out on a tusk",
+    theme: "rescue from the depths",
+    summary:
+      "The whole Varaha Purana is spoken while the rescue is still happening: Vishnu as the boar has dived into the cosmic waters, lifted the drowned earth on his tusk, and is answering her questions on the way back up.",
+    citationUrl: cite("varaha"),
+    weight: 125,
+  },
+  {
+    key: "purana:varaha:earth-questions",
+    source: "purana",
+    scripture: "Varaha Purana",
+    reference: "Dialogue of Bhudevi and Varaha",
+    title: "The earth asks who is worth saving",
+    theme: "worthiness and grace",
+    summary:
+      "Bhudevi, the earth goddess, questions her rescuer about vows, giving and who deserves deliverance. The answers keep returning to the same place: deliverance is not a reward issued for a score, or she herself would still be under the water.",
+    citationUrl: cite("varaha"),
+    weight: 110,
+  },
+  {
+    key: "purana:varaha:mathura",
+    source: "purana",
+    scripture: "Varaha Purana",
+    reference: "Mathura Mahatmya",
+    title: "Why the ground at Mathura is different",
+    theme: "sacred place and memory",
+    summary:
+      "The Varaha Purana's praise of Mathura treats a place as a form of memory — soil that holds what happened on it. Pilgrimage becomes less about travel than about standing where something true occurred and letting it work on you.",
+    citationUrl: cite("varaha"),
+    weight: 100,
+  },
+  {
+    key: "purana:vamana:three-steps",
+    source: "purana",
+    scripture: "Vamana Purana",
+    reference: "Framing narrative — the Vamana avatara",
+    title: "Three paces from a man who had everything",
+    theme: "humility outmatching power",
+    summary:
+      "A dwarf asks the world-conquering Bali for three paces of land and is warned it is a trap. Bali gives anyway rather than break his word, and the third step has nowhere left to fall but his own head. He is honoured above the gods for losing.",
+    citationUrl: cite("vamana"),
+    weight: 130,
+  },
+  {
+    key: "purana:vamana:aditi-penance",
+    source: "purana",
+    scripture: "Vamana Purana",
+    reference: "Chapters on the birth of Vamana",
+    title: "A mother's austerity before the rescue",
+    theme: "patience before deliverance",
+    summary:
+      "Before the dwarf ever walks into Bali's hall, Aditi undertakes long austerity for a son who can set things right. The Vamana Purana spends its opening on the waiting, not the victory — the part nobody retells.",
+    citationUrl: cite("vamana"),
+    weight: 105,
+  },
+  {
+    key: "purana:vamana:trivikrama",
+    source: "purana",
+    scripture: "Vamana Purana",
+    reference: "The Trivikrama form",
+    title: "The small form was the real one",
+    theme: "underestimation",
+    summary:
+      "The figure everyone in the hall dismissed expands into Trivikrama, who covers earth and sky in two strides. The Purana's point is not the vast form but that it was there the whole time, standing quietly and asking politely.",
+    citationUrl: cite("vamana"),
+    weight: 120,
+  },
+  {
+    key: "purana:bhavishya:name",
+    source: "purana",
+    scripture: "Bhavishya Purana",
+    reference: "Framing of the text",
+    title: "The Purana written in the future tense",
+    theme: "time and consequence",
+    summary:
+      "Alone among the eighteen, the Bhavishya Purana is framed as prophecy — its name simply means 'the future'. Its working assumption is that what is coming is not arbitrary but grown from what is being done now.",
+    citationUrl: cite("bhavishya"),
+    weight: 115,
+  },
+  {
+    key: "purana:bhavishya:surya",
+    source: "purana",
+    scripture: "Bhavishya Purana",
+    reference: "Brahma Parva — sun worship",
+    title: "The oldest medicine is to face the light",
+    theme: "discipline and renewal",
+    summary:
+      "Large parts of the Bhavishya Purana concern the worship of Surya, including the priestly lineages who tended sun temples. Its prescription is unglamorous and daily: rise, face the light, begin again.",
+    citationUrl: cite("bhavishya"),
+    weight: 110,
+  },
+  {
+    key: "purana:bhavishya:household-year",
+    source: "purana",
+    scripture: "Bhavishya Purana",
+    reference: "Chapters on vratas and festivals",
+    title: "A year built out of small observances",
+    theme: "rhythm and remembrance",
+    summary:
+      "The Bhavishya Purana organises the calendar into fasts, festivals and duties. The architecture is deliberate: a person cannot hold a spiritual intention continuously, so the year is built to keep returning them to it.",
+    citationUrl: cite("bhavishya"),
+    weight: 100,
+  },
+  {
+    key: "purana:brahmavaivarta:radha",
+    source: "purana",
+    scripture: "Brahmavaivarta Purana",
+    reference: "Krishna Janma Khanda",
+    title: "Two names for one thing",
+    theme: "love as inseparability",
+    summary:
+      "The Brahmavaivarta Purana refuses to treat Radha as Krishna's companion and instead treats them as one reality described from two sides. Devotion here is not reaching toward the divine but recognising you were never separate.",
+    citationUrl: cite("brahmavaivarta"),
+    weight: 125,
+  },
+  {
+    key: "purana:brahmavaivarta:ganapati",
+    source: "purana",
+    scripture: "Brahmavaivarta Purana",
+    reference: "Ganapati Khanda",
+    title: "The one you greet before beginning",
+    theme: "obstacles and beginnings",
+    summary:
+      "A whole book of the Brahmavaivarta Purana belongs to Ganesha. He is not asked to clear the road so much as consulted about whether it is the right road — which is why nothing is meant to start without him.",
+    citationUrl: cite("brahmavaivarta"),
+    weight: 120,
+  },
+  {
+    key: "purana:brahmavaivarta:prakriti",
+    source: "purana",
+    scripture: "Brahmavaivarta Purana",
+    reference: "Prakriti Khanda",
+    title: "Nature is not a backdrop",
+    theme: "the feminine principle",
+    summary:
+      "The Prakriti Khanda treats the goddess as nature itself — not scenery for a divine drama but the active power without which nothing at all occurs. Consciousness may be still; everything that moves, moves as her.",
+    citationUrl: cite("brahmavaivarta"),
+    weight: 110,
   },
 ];
 

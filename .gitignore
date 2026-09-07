@@ -31,3 +31,11 @@ Thumbs.db
 
 # vercel
 .vercel
+
+# python renderer
+tmp-render-py/
+tmp-tts/
+__pycache__/
+*.py[cod]
+.venv/
+venv/

@@ -192,6 +192,57 @@ begin
 end;
 $$;
 
+-- ---------------------------------------------------------------------------
+-- 5b. claim_unused_topic_for_scripture() — the daily Purana rotation.
+--     Identical locking semantics, but restricted to one scripture so the
+--     engine can walk the eighteen Maha Puranas in order, one per day.
+--     Returns NULL when that scripture has nothing unused left, which lets the
+--     caller advance to the next Purana instead of failing.
+-- ---------------------------------------------------------------------------
+create or replace function public.claim_unused_topic_for_scripture(
+  p_scripture text,
+  p_exclude text[] default '{}'
+)
+returns public.topic_ledger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  claimed public.topic_ledger;
+begin
+  select * into claimed
+  from public.topic_ledger t
+  where t.times_used = 0
+    and t.scripture = p_scripture
+    and (t.claimed_at is null or t.claimed_at < now() - interval '15 minutes')
+    and not (t.topic_key = any(p_exclude))
+  order by t.weight desc, random()
+  limit 1
+  for update skip locked;
+
+  if claimed.topic_key is null then
+    return null;
+  end if;
+
+  update public.topic_ledger
+     set claimed_at = now()
+   where topic_key = claimed.topic_key;
+
+  return claimed;
+end;
+$$;
+
+-- How much material is left per scripture. Handy for spotting a Purana that is
+-- about to run dry before the rotation reaches it.
+create or replace view public.scripture_stock as
+select scripture,
+       count(*)                                as total,
+       count(*) filter (where times_used = 0)  as remaining
+from public.topic_ledger
+group by scripture
+order by remaining asc;
+
 -- Mark a topic permanently spent (called only after a script is accepted).
 create or replace function public.consume_topic(p_topic_key text)
 returns void

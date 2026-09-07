@@ -73,6 +73,23 @@ export const config = {
   ttsPitch: optional("TTS_PITCH", "+0Hz"),
   ttsVolume: optional("TTS_VOLUME", "+0%"),
 
+  /**
+   * Daily Maha Purana rotation. On by default: the engine walks the eighteen
+   * Puranas in their traditional order, one per day. Set PURANA_ROTATION=off
+   * to fall back to weighted-random selection across the whole ledger.
+   */
+  puranaRotation: optional("PURANA_ROTATION", "on") !== "off",
+  /** Day zero of the cycle. Any parseable date; defaults to the Unix epoch. */
+  rotationEpoch: (() => {
+    const raw = optional("ROTATION_EPOCH");
+    const parsed = raw ? new Date(raw) : null;
+    return parsed && !Number.isNaN(parsed.getTime())
+      ? parsed
+      : new Date(Date.UTC(1970, 0, 1));
+  })(),
+  /** Days spent on each Purana before advancing. */
+  rotationDaysPerPurana: num("ROTATION_DAYS_PER_PURANA", 1),
+
   targetSeconds: num("TARGET_SECONDS", 30),
   similarityThreshold: num("SIMILARITY_THRESHOLD", 0.45),
   maxGenerationAttempts: num("MAX_GENERATION_ATTEMPTS", 4),

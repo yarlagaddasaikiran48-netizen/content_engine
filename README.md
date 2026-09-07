@@ -16,7 +16,7 @@ Gemini 2.5 Flash  →  Edge TTS  →  Supabase  →  you tap Approve  →  GitHu
 ## What makes this different from a generic "AI content bot"
 
 **Nothing is hallucinated.** The model is never asked to recall scripture. A
-topic is claimed from a ledger of 766 real, citable passages, the actual
+topic is claimed from a ledger of 784 real, citable passages, the actual
 Sanskrit and a published English translation are fetched and handed to the
 model, and it is told to explain only what it was given. Every row in the
 dashboard carries a `verify source` link.
@@ -66,8 +66,9 @@ before it is ever stored or spoken.
 │   │   └── StatusPill.tsx
 │   ├── lib/
 │   │   ├── tts/edge-tts.ts              Edge TTS reimplemented in TypeScript
-│   │   ├── gemini/{prompt,generate}.ts  grounded prompting + structured output
-│   │   ├── sources/{gita,puranas,panchang,trending,hook}.ts
+│   ├── gemini/master-prompt.ts      the master system prompt
+│   ├── gemini/{prompt,generate}.ts  grounded prompting + structured output
+│   │   ├── sources/{gita,puranas,mahapuranas,panchang,trending,hook}.ts
 │   │   ├── safety/{profanity,validate}.ts
 │   │   ├── dedupe/hash.ts
 │   │   ├── youtube/{oauth,upload}.ts    resumable upload, no googleapis
@@ -77,11 +78,15 @@ before it is ever stored or spoken.
 │   └── middleware.ts                    optional password gate (off by default)
 ├── supabase/schema.sql                  tables, functions, RLS, storage bucket
 ├── scripts/
-│   ├── seed-topics.ts                   load 766 topics into the ledger
+│   ├── seed-topics.ts                   load 784 topics into the ledger
 │   ├── get-youtube-token.ts             one-time OAuth helper
 │   ├── render-and-publish.ts            FFmpeg render + YouTube upload
 │   ├── test-tts.ts                      voice smoke test
-│   └── self-test.ts                     22 offline checks
+│   └── self-test.ts                     29 offline checks
+├── render/
+│   ├── render_short.py                  local Ken Burns + captions renderer
+│   ├── minimal_example.py               the 20-line audio + background version
+│   └── requirements.txt
 ├── .github/workflows/
 │   ├── render-and-publish.yml           where FFmpeg runs
 │   └── daily-generate.yml               free cron alternative
@@ -100,7 +105,7 @@ already has it.
 ```bash
 npm install
 cp .env.example .env.local
-npm run selftest        # 22 checks, needs no credentials
+npm run selftest        # 29 checks, needs no credentials
 ```
 
 ### 1. Supabase (free)
@@ -131,8 +136,8 @@ npm run seed:topics
 ```
 
 Fetches all 700 Bhagavad Gita verses (Sanskrit + transliteration +
-public-domain translation) from the free Vedic Scriptures API and adds the 66
-curated Purana / Upanishad / Ramayana topics. **766 topics ≈ 2 years of daily
+public-domain translation) from the free Vedic Scriptures API and adds the 84
+curated Purana / Upanishad / Ramayana topics covering all eighteen Maha Puranas. **784 topics ≈ 2 years of daily
 content with zero repeats.**
 
 Re-running is safe — it uses `ON CONFLICT DO NOTHING`, so already-used topics
@@ -295,24 +300,146 @@ Taittiriya Upanishads; and the Ramayana of Valmiki.
 
 ---
 
+## The daily Maha Purana rotation
+
+The engine walks the eighteen Maha Puranas in their traditional order, one per
+day, then wraps. The schedule is a pure function of the date — no cursor is
+stored anywhere, so it cannot drift, and any machine asked "what is today?"
+gives the same answer.
+
+| # | Purana | Guna | Deity | Verses | Full English text |
+|---|---|---|---|---|---|
+| 1 | Brahma | rajas | Brahma | 10,000 | yes |
+| 2 | Padma | sattva | Vishnu | 55,000 | yes |
+| 3 | Vishnu | sattva | Vishnu | 23,000 | yes |
+| 4 | Shiva | tamas | Shiva | 24,000 | yes |
+| 5 | Bhagavata | sattva | Krishna | 18,000 | yes |
+| 6 | Narada | sattva | Vishnu | 25,000 | yes |
+| 7 | Markandeya | rajas | Devi / Surya | 9,000 | yes |
+| 8 | Agni | tamas | Agni / Vishnu | 15,400 | yes |
+| 9 | Bhavishya | rajas | Surya | 14,500 | reference only |
+| 10 | Brahmavaivarta | rajas | Krishna / Radha | 18,000 | reference only |
+| 11 | Linga | tamas | Shiva | 11,000 | yes |
+| 12 | Varaha | sattva | Vishnu (Varaha) | 24,000 | reference only |
+| 13 | Skanda | tamas | Kartikeya | 81,100 | yes |
+| 14 | Vamana | rajas | Vishnu (Vamana) | 10,000 | reference only |
+| 15 | Kurma | tamas | Vishnu (Kurma) / Shiva | 17,000 | reference only |
+| 16 | Matsya | tamas | Vishnu (Matsya) | 14,000 | reference only |
+| 17 | Garuda | sattva | Vishnu | 19,000 | yes |
+| 18 | Brahmanda | rajas | Brahma / Lalita | 12,000 | yes |
+
+Verse counts are the traditional figures the Puranas give for each other (the
+Matsya Purana carries the list), totalling about 400,000. Surviving manuscripts
+vary, so they are tradition rather than a manuscript census. The guna column is
+the Padma Purana's three-fold classification.
+
+The registry lives in `src/lib/sources/mahapuranas.ts`. Each entry carries the
+text's character and natural themes, and the prompt builder injects them so a
+Garuda Purana script and a Bhagavata Purana script do not come out sounding the
+same. Citations resolve through one function — open full text where it exists,
+canonical reference otherwise — so no entry carries a URL of its own to rot.
+
+If today's Purana has no unused topics left, the rotation advances to the next
+rather than failing. Once all eighteen are spent it falls back to the wider
+ledger (Gita, Upanishads, Ramayana). Tune it with `PURANA_ROTATION`,
+`ROTATION_EPOCH` and `ROTATION_DAYS_PER_PURANA`; set the first to `off` for
+weighted-random selection instead.
+
+Check what is running low before it bites:
+
+```sql
+select * from scripture_stock;   -- per-Purana remaining topics, lowest first
+```
+
+---
+
+## The master prompt
+
+`src/lib/gemini/master-prompt.ts` is the highest-leverage file here — it decides
+whether a thumb stops. It is written as constraints and physics rather than as a
+fill-in template, because templates produce identically-shaped scripts, which
+the duplicate detection then rejects.
+
+It covers: who is watching and what they are actually carrying; the
+second-by-second structure of thirty seconds; the rule that every script
+translates one real modern pressure through one ancient story; a banned-phrase
+list (those are the exact fillers a model reaches for when it has nothing
+specific to say); hard safety rails; and a four-point self-check before
+answering.
+
+Nothing about any specific Purana, deity or story is baked into it. The Purana
+of the day, its character, the passage, the Sanskrit and the translation are all
+injected at call time from the ledger.
+
+---
+
+## Rendering locally with Python
+
+The GitHub Actions renderer is the automatic path. `render/` is the local one —
+useful for iterating on the look without burning Actions minutes, and for
+matching the style of viral mythological storytelling shorts.
+
+```bash
+pip install -r render/requirements.txt
+
+# audio + text; background generated, no key needed
+python render/render_short.py --audio narration.mp3 --text "your script"
+
+# with your own mythological artwork
+python render/render_short.py --audio narration.mp3 --text-file script.txt     --image assets/backgrounds/krishna.jpg
+
+# fetch a background from Pexels (free key in PEXELS_API_KEY)
+python render/render_short.py --audio narration.mp3 --text-file script.txt     --query "ancient indian temple painting"
+
+# pull an approved item straight out of the queue
+python render/render_short.py --id <video-uuid> --out short.mp4
+```
+
+What it produces: 1080x1920 H.264, a slow ease-out Ken Burns push with a slight
+drift so the motion never looks mechanical, and bold phrase-by-phrase captions
+with a heavy outline and drop shadow, placed clear of the Shorts UI overlay.
+Captions are drawn with Pillow rather than MoviePy's `TextClip`, which avoids
+the ImageMagick and font-resolution problems that break that class on most
+machines.
+
+Three deliberate behaviours:
+
+- **Audio is the source of truth for duration.** The video runs a fraction
+  longer so it can fade on a held frame, and the soundtrack is padded with
+  digital silence to match — otherwise MoviePy raises when it seeks past the
+  final sample.
+- **Nothing is hardcoded.** Resolution, fps, zoom, caption size, stroke, safe
+  margins, colours and the font are all CLI flags or environment variables.
+  Fonts are discovered per platform rather than assumed.
+- **It degrades instead of failing.** No Pexels key, no image, no system font —
+  each has a fallback, so it always produces a video. The blur-and-dim
+  legibility pass is applied only to photographs; a generated gradient skips it,
+  because dimming an already-dark image twice yields a black frame.
+
+`render/minimal_example.py` is the twenty-line version: audio plus one
+background into a synced MP4, nothing else.
+
+---
+
 ## Commands
 
 | Command | Purpose |
 |---|---|
 | `npm run dev` | Local dashboard at `/dashboard` |
-| `npm run selftest` | 22 offline checks — run this first when something looks wrong |
+| `npm run selftest` | 29 offline checks — run this first when something looks wrong |
 | `npm run seed:topics` | Load / top up the topic ledger |
 | `npm run tts:test` | Synthesise a sample MP3 to `tmp-tts/` |
 | `npm run tts:test -- --voices` | List every available voice |
 | `npm run auth:youtube` | Mint a YouTube refresh token |
 | `npm run render -- --id=<uuid>` | Render + publish one item locally |
 | `npm run typecheck` | `tsc --noEmit` |
+| `python render/render_short.py --help` | Local renderer options |
 
 ---
 
 ## Troubleshooting
 
-**"Every topic in the ledger has been used"** — you have published 766 videos,
+**"Every topic in the ledger has been used"** — you have published 784 videos,
 or seeding did not run. Check with
 `select count(*) from topic_ledger where times_used = 0;`
 

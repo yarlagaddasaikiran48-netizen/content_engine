@@ -1,0 +1,8 @@
+# Local Python renderer. Everything here is free and open source.
+# FFmpeg itself is bundled by imageio-ffmpeg, so no separate install is needed.
+moviepy>=2.1.2
+pillow>=10.4
+numpy>=1.26
+requests>=2.32
+imageio-ffmpeg>=0.5
+python-dotenv>=1.0

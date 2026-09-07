@@ -21,6 +21,7 @@ import { contentHash } from "@/lib/dedupe/hash";
 import { generateScript } from "@/lib/gemini/generate";
 import { buildHookContext } from "@/lib/sources/hook";
 import { fetchGitaVerse } from "@/lib/sources/gita";
+import { rotationFrom } from "@/lib/sources/mahapuranas";
 import { deleteAudio, supabaseAdmin, uploadAudio } from "@/lib/supabase/admin";
 import { synthesize } from "@/lib/tts/edge-tts";
 import { validateScript } from "@/lib/safety/validate";
@@ -64,8 +65,8 @@ async function recordAttempt(
   }
 }
 
-/** Claim one topic that has never been used. */
-async function claimTopic(exclude: string[]): Promise<Topic | null> {
+/** Claim one never-used topic from anywhere in the ledger. */
+async function claimAnyTopic(exclude: string[]): Promise<Topic | null> {
   const { data, error } = await supabaseAdmin().rpc("claim_unused_topic", {
     p_exclude: exclude,
   });
@@ -74,6 +75,58 @@ async function claimTopic(exclude: string[]): Promise<Topic | null> {
   }
   const topic = data as Topic | null;
   return topic && topic.topic_key ? topic : null;
+}
+
+/** Claim one never-used topic belonging to a specific scripture. */
+async function claimTopicFromScripture(
+  scripture: string,
+  exclude: string[],
+): Promise<Topic | null> {
+  const { data, error } = await supabaseAdmin().rpc(
+    "claim_unused_topic_for_scripture",
+    { p_scripture: scripture, p_exclude: exclude },
+  );
+  if (error) {
+    throw new Error(`claim_unused_topic_for_scripture failed: ${error.message}`);
+  }
+  const topic = data as Topic | null;
+  return topic && topic.topic_key ? topic : null;
+}
+
+/**
+ * Pick today's topic.
+ *
+ * With the rotation on, the eighteen Maha Puranas are walked in their
+ * traditional order starting from whichever one today maps to. A Purana with
+ * nothing unused left is skipped rather than fatal, and once every Purana is
+ * exhausted the whole ledger — Gita, Upanishads, Ramayana — is used as the
+ * fallback. Nothing about the schedule is stored, so it cannot drift.
+ */
+async function claimTopic(
+  exclude: string[],
+  log: string[],
+): Promise<Topic | null> {
+  if (config.puranaRotation) {
+    const rotation = rotationFrom(new Date(), {
+      epoch: config.rotationEpoch,
+      daysPerPurana: config.rotationDaysPerPurana,
+    });
+
+    for (const [offset, purana] of rotation.entries()) {
+      const topic = await claimTopicFromScripture(purana.name, exclude);
+      if (topic) {
+        log.push(
+          offset === 0
+            ? `Rotation: ${purana.name} (#${purana.order} of 18, ${purana.category})`
+            : `Rotation: ${purana.name} (#${purana.order}) — skipped ${offset} exhausted Purana(s)`,
+        );
+        return topic;
+      }
+    }
+    log.push("Rotation: all eighteen Puranas exhausted; drawing from the full ledger.");
+  }
+
+  return claimAnyTopic(exclude);
 }
 
 async function releaseTopic(topicKey: string): Promise<void> {
@@ -157,7 +210,7 @@ export async function generateVideo(): Promise<GenerationOutcome> {
     let topic: Topic | null = null;
 
     try {
-      topic = await claimTopic(triedTopics);
+      topic = await claimTopic(triedTopics, log);
       if (!topic) {
         log.push("No unused topics remain in the ledger.");
         await recordAttempt(null, attempt, "no_topics", "topic_ledger exhausted");

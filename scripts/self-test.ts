@@ -17,6 +17,12 @@ import { MAX_WORDS, MIN_WORDS, validateScript } from "@/lib/safety/validate";
 import { fetchGitaVerse } from "@/lib/sources/gita";
 import { buildHookContext } from "@/lib/sources/hook";
 import { computePanchang } from "@/lib/sources/panchang";
+import {
+  MAHA_PURANAS,
+  citationUrlFor,
+  puranaForDate,
+  rotationFrom,
+} from "@/lib/sources/mahapuranas";
 import { assertUniqueKeys, CORPUS } from "@/lib/sources/puranas";
 
 let failures = 0;
@@ -112,6 +118,44 @@ async function main(): Promise<void> {
   check("curated topics have unique keys", true, `${CORPUS.length} topics`);
   check("covers multiple scriptures", scriptures.length >= 10, `${scriptures.length} books`);
   console.log(`        ${scriptures.join(", ")}`);
+
+  console.log("\nMaha Purana rotation");
+  check("all eighteen are present", MAHA_PURANAS.length === 18);
+  check(
+    "orders run 1..18 with no gaps",
+    MAHA_PURANAS.every((purana, index) => purana.order === index + 1),
+  );
+  check(
+    "every Purana resolves a citation URL",
+    MAHA_PURANAS.every((purana) => citationUrlFor(purana).startsWith("https://")),
+  );
+  const covered = new Set(CORPUS.map((entry) => entry.scripture));
+  const uncovered = MAHA_PURANAS.filter((purana) => !covered.has(purana.name));
+  check(
+    "every Purana has at least one topic",
+    uncovered.length === 0,
+    uncovered.length ? uncovered.map((p) => p.name).join(", ") : "18 of 18 covered",
+  );
+
+  const anchor = new Date(Date.UTC(2026, 0, 1));
+  const visited = new Set<string>();
+  for (let offset = 0; offset < 18; offset += 1) {
+    visited.add(puranaForDate(new Date(anchor.getTime() + offset * 86_400_000)).key);
+  }
+  check("18 consecutive days visit all 18 Puranas", visited.size === 18);
+  check(
+    "day 19 wraps back to day 1",
+    puranaForDate(new Date(anchor.getTime() + 18 * 86_400_000)).key ===
+      puranaForDate(anchor).key,
+  );
+  const rotation = rotationFrom(anchor);
+  check(
+    "rotation starts at today and covers all 18",
+    rotation.length === 18 && rotation[0].key === puranaForDate(anchor).key,
+  );
+  const today = puranaForDate();
+  console.log(`        today maps to: ${today.name} (#${today.order} of 18, ${today.category})`);
+
 
   console.log("\nLive sources");
   try {
