@@ -1,5 +1,5 @@
 import { fail, messageOf, ok } from "@/lib/api";
-import { config } from "@/lib/env";
+import { loadConfig } from "@/lib/settings/config";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -30,9 +30,10 @@ function secretMatches(provided: string | null, expected: string): boolean {
 
 export async function POST(request: Request) {
   try {
+    const config = await loadConfig();
     if (!config.publishCallbackSecret) {
       return fail(
-        "PUBLISH_CALLBACK_SECRET is not configured on this deployment.",
+        "The publish callback secret is not set. Add it in Settings, and set the same value as a PUBLISH_CALLBACK_SECRET secret on the repo.",
         503,
       );
     }

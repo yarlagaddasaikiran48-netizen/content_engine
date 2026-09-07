@@ -68,6 +68,20 @@ export interface SpiritualVideo {
   error_message: string | null;
   render_attempts: number;
 
+  // ---- review deck and publish queue (migration 001) --------------------
+  /** Rejected and unreviewed scripts delete themselves at this time. */
+  expires_at: string | null;
+  /** Operator-chosen publish order. */
+  queue_position: number | null;
+  /** Set only when a slot is pinned by hand; normally derived. */
+  scheduled_for: string | null;
+  /** The length this script was written for. */
+  target_seconds: number | null;
+  /** First time this card reached the top of the deck. */
+  seen_at: string | null;
+  /** Which configured slot this filled, e.g. "00:00". */
+  published_slot: string | null;
+
   model: string;
 }
 

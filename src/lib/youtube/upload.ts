@@ -10,7 +10,7 @@
  * leaves plenty of headroom for retries.
  */
 
-import { config } from "@/lib/env";
+import { loadConfig } from "@/lib/settings/config";
 import { getAccessToken } from "@/lib/youtube/oauth";
 
 const UPLOAD_ENDPOINT =
@@ -53,6 +53,7 @@ function prepareTags(tags: string[]): string[] {
 }
 
 export async function uploadVideo(request: UploadRequest): Promise<UploadResult> {
+  const config = await loadConfig();
   const accessToken = await getAccessToken();
 
   const metadata = {

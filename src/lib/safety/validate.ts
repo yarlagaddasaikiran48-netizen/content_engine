@@ -7,7 +7,8 @@
  * hashtags, and no stage directions left in the narration.
  */
 
-import { config } from "@/lib/env";
+import type { AppConfig } from "@/lib/settings/config";
+import { wordWindow } from "@/lib/settings/config";
 import { checkSafety, type SafetyIssue } from "@/lib/safety/profanity";
 import type { GeneratedScript } from "@/lib/types";
 
@@ -22,11 +23,11 @@ import type { GeneratedScript } from "@/lib/types";
  * accepted. Change TARGET_SECONDS to 45 and the window follows automatically;
  * switch to a different voice or rate and TTS_WORDS_PER_MINUTE retunes it.
  */
-export const IDEAL_WORDS = Math.round(
-  (config.targetSeconds * config.speechWordsPerMinute) / 60,
-);
-export const MIN_WORDS = Math.round(IDEAL_WORDS * (1 - config.wordCountTolerance));
-export const MAX_WORDS = Math.round(IDEAL_WORDS * (1 + config.wordCountTolerance));
+/** Kept as a function of config rather than a module constant, because the
+ *  target length is now editable at runtime from the Settings page. */
+export function words(cfg: AppConfig) {
+  return wordWindow(cfg);
+}
 
 /** YouTube hard limits. */
 const MAX_TITLE_CHARS = 100;
@@ -87,7 +88,8 @@ function cleanHashtags(tags: string[]): string[] {
   return out;
 }
 
-export function validateScript(script: GeneratedScript): ValidationResult {
+export function validateScript(script: GeneratedScript, cfg: AppConfig): ValidationResult {
+  const { min: MIN_WORDS, max: MAX_WORDS } = wordWindow(cfg);
   const errors: string[] = [];
 
   const title = cleanTitle(script.title ?? "");
@@ -107,10 +109,10 @@ export function validateScript(script: GeneratedScript): ValidationResult {
   // ---- body ----
   const wordCount = countWords(body);
   if (wordCount < MIN_WORDS) {
-    errors.push(`Script is ${wordCount} words; too short for ${config.targetSeconds} seconds (minimum ${MIN_WORDS}).`);
+    errors.push(`Script is ${wordCount} words; too short for ${cfg.targetSeconds} seconds (minimum ${MIN_WORDS}).`);
   }
   if (wordCount > MAX_WORDS) {
-    errors.push(`Script is ${wordCount} words; too long for ${config.targetSeconds} seconds (maximum ${MAX_WORDS}).`);
+    errors.push(`Script is ${wordCount} words; too long for ${cfg.targetSeconds} seconds (maximum ${MAX_WORDS}).`);
   }
   if (/\b(subscribe|like and share|hit the bell|comment below)\b/i.test(body)) {
     errors.push("Narration contains a call to action; that belongs in the description, not the audio.");

@@ -16,7 +16,7 @@
  * up to MAX_GENERATION_ATTEMPTS. Every outcome is written to generation_log.
  */
 
-import { config } from "@/lib/env";
+import { loadConfig, wordWindow, type AppConfig } from "@/lib/settings/config";
 import { contentHash } from "@/lib/dedupe/hash";
 import { generateScript } from "@/lib/gemini/generate";
 import { buildHookContext } from "@/lib/sources/hook";
@@ -43,7 +43,11 @@ type LogOutcome =
   | "unsafe"
   | "invalid"
   | "error"
-  | "no_topics";
+  | "no_topics"
+  // The audio came out outside the target duration. Distinct from "invalid",
+  // which is a word-count guess; these two are measured facts about the MP3.
+  | "too_long"
+  | "too_short";
 
 async function recordAttempt(
   topicKey: string | null,
@@ -105,6 +109,7 @@ async function claimTopicFromScripture(
 async function claimTopic(
   exclude: string[],
   log: string[],
+  config: AppConfig,
 ): Promise<Topic | null> {
   if (config.puranaRotation) {
     const rotation = rotationFrom(new Date(), {
@@ -196,6 +201,7 @@ function slugify(value: string): string {
 }
 
 export async function generateVideo(): Promise<GenerationOutcome> {
+  const config = await loadConfig();
   const log: string[] = [];
   const triedTopics: string[] = [];
   const rejectedAngles: string[] = [];
@@ -210,7 +216,7 @@ export async function generateVideo(): Promise<GenerationOutcome> {
     let topic: Topic | null = null;
 
     try {
-      topic = await claimTopic(triedTopics, log);
+      topic = await claimTopic(triedTopics, log, config);
       if (!topic) {
         log.push("No unused topics remain in the ledger.");
         await recordAttempt(null, attempt, "no_topics", "topic_ledger exhausted");
@@ -229,6 +235,7 @@ export async function generateVideo(): Promise<GenerationOutcome> {
 
       // ---- 1. write ----
       const raw = await generateScript({
+        cfg: config,
         topic,
         hook,
         recentTitles,
@@ -236,7 +243,7 @@ export async function generateVideo(): Promise<GenerationOutcome> {
       });
 
       // ---- 2. validate structure + language ----
-      const validation = validateScript(raw);
+      const validation = validateScript(raw, config);
       if (!validation.valid) {
         const detail = validation.errors.join(" ");
         const outcome: LogOutcome =
@@ -295,6 +302,44 @@ export async function generateVideo(): Promise<GenerationOutcome> {
         `  voiced: ${speech.durationSeconds}s, ${(speech.bytes / 1024).toFixed(0)} KB, ${speech.voice}`,
       );
 
+      // ---- 5b. the duration gate ----
+      // Word count only *predicts* spoken length. Long words and heavy
+      // punctuation both defeat it, so the real MP3 is the only honest check.
+      // This runs before the upload so an overlong take costs no storage and
+      // never reaches the review deck.
+      const longest = config.targetSeconds * (1 + config.wordCountTolerance);
+      const shortest = config.targetSeconds * (1 - config.wordCountTolerance);
+
+      if (speech.durationSeconds > longest) {
+        log.push(
+          `  rejected (too long): ${speech.durationSeconds.toFixed(1)}s of audio against a ${config.targetSeconds}s target (limit ${longest.toFixed(1)}s).`,
+        );
+        await recordAttempt(
+          topic.topic_key,
+          attempt,
+          "too_long",
+          `${speech.durationSeconds.toFixed(1)}s > ${longest.toFixed(1)}s`,
+        );
+        rejectedAngles.push(script.title);
+        await releaseTopic(topic.topic_key);
+        continue;
+      }
+
+      if (speech.durationSeconds < shortest) {
+        log.push(
+          `  rejected (too short): ${speech.durationSeconds.toFixed(1)}s of audio against a ${config.targetSeconds}s target (minimum ${shortest.toFixed(1)}s).`,
+        );
+        await recordAttempt(
+          topic.topic_key,
+          attempt,
+          "too_short",
+          `${speech.durationSeconds.toFixed(1)}s < ${shortest.toFixed(1)}s`,
+        );
+        rejectedAngles.push(script.title);
+        await releaseTopic(topic.topic_key);
+        continue;
+      }
+
       // ---- 6. store the audio ----
       const objectPath = `${new Date().toISOString().slice(0, 10)}/${Date.now()}-${slugify(script.title)}.mp3`;
       const { path, publicUrl } = await uploadAudio(objectPath, speech.audio);
@@ -325,6 +370,8 @@ export async function generateVideo(): Promise<GenerationOutcome> {
           word_count: validation.wordCount,
           voice: speech.voice,
           model: config.geminiModel,
+          target_seconds: config.targetSeconds,
+          expires_at: new Date(Date.now() + config.rejectTtlHours * 3_600_000).toISOString(),
         })
         .select()
         .single();

@@ -1,5 +1,5 @@
 import { fail, messageOf, ok } from "@/lib/api";
-import { config } from "@/lib/env";
+import { loadConfig } from "@/lib/settings/config";
 import { generateVideo } from "@/lib/pipeline/generate-video";
 
 export const runtime = "nodejs";
@@ -18,6 +18,7 @@ export const maxDuration = 60;
  * which is fine for a private deployment but worth setting anyway.
  */
 export async function GET(request: Request) {
+  const config = await loadConfig();
   if (config.cronSecret) {
     const url = new URL(request.url);
     const header = request.headers.get("authorization");

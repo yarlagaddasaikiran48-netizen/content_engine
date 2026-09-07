@@ -8,17 +8,19 @@
  * plausible-sounding verse number.
  */
 
-import { MASTER_SYSTEM_PROMPT } from "@/lib/gemini/master-prompt";
+import { buildMasterPrompt } from "@/lib/gemini/master-prompt";
 import { PURANA_BY_NAME } from "@/lib/sources/mahapuranas";
 import type { HookContext, Topic } from "@/lib/types";
-import { config } from "@/lib/env";
-import { MAX_WORDS, MIN_WORDS } from "@/lib/safety/validate";
+import { wordWindow, type AppConfig } from "@/lib/settings/config";
 
 /**
- * The system instruction handed to Gemini on every call. Lives in its own
- * module because it is edited far more often than this file's plumbing.
+ * The system instruction handed to Gemini on every call. A function rather
+ * than a constant because its beat sheet is computed from the configured
+ * length, which is now editable at runtime.
  */
-export const SYSTEM_INSTRUCTION = MASTER_SYSTEM_PROMPT;
+export function systemInstruction(cfg: AppConfig): string {
+  return buildMasterPrompt(cfg.targetSeconds);
+}
 
 export interface PromptInput {
   topic: Topic;
@@ -27,6 +29,8 @@ export interface PromptInput {
   recentTitles: string[];
   /** Angles already tried in this run and rejected as too similar. */
   avoidAngles?: string[];
+  /** Runtime configuration: drives the word window and the target length. */
+  cfg: AppConfig;
 }
 
 export function buildPrompt({
@@ -34,7 +38,9 @@ export function buildPrompt({
   hook,
   recentTitles,
   avoidAngles = [],
+  cfg,
 }: PromptInput): string {
+  const { min: MIN_WORDS, max: MAX_WORDS } = wordWindow(cfg);
   const sections: string[] = [];
 
   sections.push(`TODAY'S CONTEXT
@@ -85,7 +91,7 @@ ${avoidAngles.map((angle) => `- ${angle}`).join("\n")}`);
   }
 
   sections.push(`YOUR TASK
-Write the script for this passage. The narration must be between ${MIN_WORDS} and ${MAX_WORDS} words — that is ${config.targetSeconds} seconds of speech, and it will be rejected outside that range. Count your words before answering.
+Write the script for this passage. The narration must be between ${MIN_WORDS} and ${MAX_WORDS} words — that is ${cfg.targetSeconds} seconds of speech, and it will be rejected outside that range. Count your words before answering.
 
 Return JSON with exactly these fields:
   title           — the YouTube title

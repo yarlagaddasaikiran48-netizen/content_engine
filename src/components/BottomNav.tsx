@@ -4,8 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 /**
- * Four destinations, fixed to the bottom because that is where a thumb rests
- * on a phone held one-handed. Targets are 48px minimum, and the bar clears the
+ * Three destinations, fixed to the bottom because that is where a thumb rests
+ * on a phone held one-handed. Stats will make a fourth once analytics land; an
+ * empty tab that 404s is worse than no tab. Targets are 48px minimum, and the bar clears the
  * iOS home indicator via the --safe-bottom variable.
  *
  * Approve and publish became separate events, so Queue is not optional: it is
@@ -14,7 +15,6 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/", label: "Review", icon: "♡" },
   { href: "/queue", label: "Queue", icon: "≡" },
-  { href: "/performance", label: "Stats", icon: "◔" },
   { href: "/settings", label: "Settings", icon: "⚙" },
 ] as const;
 
@@ -24,9 +24,8 @@ export function BottomNav() {
   return (
     <nav className="bottom-nav" aria-label="Main">
       {TABS.map((tab) => {
-        // "/" would prefix-match every route, so it is compared exactly. It
-        // also claims /dashboard, which "/" currently redirects to — without
-        // that, the one page the app can render highlights no tab at all.
+        // "/" would prefix-match every route, so it is compared exactly. The
+        // legacy /dashboard list still counts as Review.
         const active =
           tab.href === "/"
             ? pathname === "/" || pathname.startsWith("/dashboard")

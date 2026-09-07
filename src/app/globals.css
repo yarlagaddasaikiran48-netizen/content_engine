@@ -324,7 +324,7 @@ audio {
   bottom: 0;
   z-index: 50;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   height: calc(var(--nav-height) + var(--safe-bottom));
   padding-bottom: var(--safe-bottom);
   background: color-mix(in srgb, var(--bg) 92%, transparent);
@@ -384,4 +384,74 @@ audio {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   border-color: var(--accent);
+}
+
+/* ==========================================================================
+   Review deck
+   ========================================================================== */
+.deck {
+  position: relative;
+  /* The stack sits above the sticky action bar; the shell already reserves it. */
+  touch-action: pan-y;
+}
+
+.deck__card {
+  position: relative;
+  /* Stops the browser turning a horizontal drag into a back-navigation. */
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  will-change: transform;
+  cursor: grab;
+}
+
+.deck__card:active {
+  cursor: grabbing;
+}
+
+/* The first line decides whether the video works, so it is set largest. */
+.deck__hook {
+  font-size: 22px;
+  line-height: 1.32;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.deck__body {
+  max-height: 34vh;
+  overflow-y: auto;
+  /* The body scrolls; the card must not drag with it. */
+  touch-action: pan-y;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.deck__stamp {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 2;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 2px solid currentColor;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+
+.deck__stamp--approve {
+  color: var(--success);
+  transform: rotate(-8deg);
+}
+
+.deck__stamp--reject {
+  color: var(--danger);
+  left: 16px;
+  right: auto;
+  transform: rotate(8deg);
 }
