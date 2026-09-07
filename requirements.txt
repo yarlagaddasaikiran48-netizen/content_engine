@@ -1,8 +1,0 @@
-requests>=2.32
-groq>=0.11
-gTTS>=2.5
-moviepy>=2.1.2
-numpy>=1.26
-google-api-python-client>=2.140
-google-auth-oauthlib>=1.2
-google-auth-httplib2>=0.2

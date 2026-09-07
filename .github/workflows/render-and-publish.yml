@@ -1,0 +1,65 @@
+name: Render and publish
+
+# Fired by the Approve button in the dashboard, via repository_dispatch.
+# This is where FFmpeg runs — GitHub's runners have it preinstalled and give
+# free minutes, which is what keeps the whole pipeline at zero cost.
+on:
+  repository_dispatch:
+    types: [render-video]
+  workflow_dispatch:
+    inputs:
+      video_id:
+        description: "spiritual_videos.id to render and publish"
+        required: true
+        type: string
+
+# Never render the same item twice concurrently.
+concurrency:
+  group: render-${{ github.event.client_payload.video_id || inputs.video_id }}
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Confirm FFmpeg is available
+        run: |
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+
+      - name: Render and upload to YouTube
+        env:
+          VIDEO_ID: ${{ github.event.client_payload.video_id || inputs.video_id }}
+          CALLBACK_URL: ${{ github.event.client_payload.callback_url }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          YOUTUBE_PRIVACY_STATUS: ${{ vars.YOUTUBE_PRIVACY_STATUS || 'public' }}
+          YOUTUBE_CATEGORY_ID: ${{ vars.YOUTUBE_CATEGORY_ID || '22' }}
+          PUBLISH_CALLBACK_SECRET: ${{ secrets.PUBLISH_CALLBACK_SECRET }}
+        run: npx tsx scripts/render-and-publish.ts --id="$VIDEO_ID"
+
+      - name: Keep the rendered file for inspection when it fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-debug-${{ github.event.client_payload.video_id || inputs.video_id }}
+          path: tmp-render/
+          retention-days: 3
+          if-no-files-found: ignore

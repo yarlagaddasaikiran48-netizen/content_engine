@@ -1,0 +1,146 @@
+/**
+ * Language safety filter.
+ *
+ * Devotional content has zero tolerance for coarse language, and a single
+ * slip would be permanently attached to the channel. Gemini's own safety
+ * settings are the first line of defence; this module is the second, and it
+ * runs on the finished text before anything is stored or spoken.
+ *
+ * Three checks:
+ *   1. Profanity — word-boundary matched, with leetspeak normalised so
+ *      "sh1t" and "f_uck" cannot slip through.
+ *   2. Forbidden topics — politics, communal comparison, caste, crime, and
+ *      anything that would make a spiritual channel toxic.
+ *   3. Harmful claims — miracle cures, guaranteed wealth, and instructions to
+ *      abandon medicine or family, which are the classic failure modes of
+ *      auto-generated "spiritual" content.
+ */
+
+/** Coarse language. Matched on word boundaries after normalisation. */
+const PROFANITY = [
+  "fuck", "fucking", "fucked", "shit", "bullshit", "bitch", "bastard",
+  "asshole", "arsehole", "dick", "cunt", "slut", "whore", "prick", "wanker",
+  "damn", "goddamn", "crap", "piss", "pissed", "dumbass", "jackass",
+  "motherfucker", "bollocks", "bugger", "twat", "douchebag",
+  // Common Hindi / Hinglish abuse, romanised
+  "chutiya", "chutiye", "bhosdi", "bhosdike", "madarchod", "behenchod",
+  "bhenchod", "gandu", "gaand", "randi", "harami", "kamina", "kutta sala",
+  "saala", "haramzada", "lodu", "chodu",
+];
+
+/** Slurs and demeaning terms — an automatic, unconditional rejection. */
+const SLURS = [
+  "retard", "retarded", "faggot", "nigger", "chink", "paki", "spastic",
+  "tranny", "midget", "cripple",
+];
+
+/** Topics a devotional short must never touch. */
+const FORBIDDEN_TOPICS: Array<{ pattern: RegExp; label: string }> = [
+  { pattern: /\b(bjp|congress|aap|modi|rahul gandhi|election|vote for|political party)\b/i, label: "party politics" },
+  { pattern: /\b(hindu|hinduism)\s+(is\s+)?(better|superior|greater)\s+than\b/i, label: "religious superiority" },
+  { pattern: /\b(muslim|christian|islam|christianity|sikh|buddhis[tm]|jain)\w*\s+(are|is)\s+(wrong|false|evil|inferior)\b/i, label: "attacking another faith" },
+  { pattern: /\b(convert|conversion)\s+(to|from)\s+(hinduism|islam|christianity)\b/i, label: "religious conversion" },
+  { pattern: /\b(upper|lower|high|low)\s+caste\b|\bcaste\s+(system|superiority|purity)\b|\buntouchab/i, label: "caste" },
+  { pattern: /\b(kill|murder|attack|destroy|burn)\s+(them|him|her|those|the)\b/i, label: "violence" },
+  { pattern: /\b(suicide|kill yourself|end your life)\b/i, label: "self-harm" },
+  { pattern: /\b(sex|sexual|erotic|porn|nude|naked)\b/i, label: "sexual content" },
+  { pattern: /\b(alcohol|drugs|cocaine|weed|marijuana|smoking)\b/i, label: "substances" },
+];
+
+/** Claims that are harmful, unprovable, or would get a channel demonetised. */
+const HARMFUL_CLAIMS: Array<{ pattern: RegExp; label: string }> = [
+  { pattern: /\b(cure|cures|heal|heals|treatment)\s+(cancer|diabetes|aids|hiv|covid|tuberculosis|disease)\b/i, label: "medical cure claim" },
+  { pattern: /\b(stop|quit|avoid|don'?t take)\s+(your\s+)?(medicine|medication|treatment|doctor)\b/i, label: "discouraging medical care" },
+  { pattern: /\b(guarantee|guaranteed|100%\s*sure|definitely will)\s+(make you|get you|bring you)?\s*(rich|wealthy|money|crore|lakh)\b/i, label: "guaranteed wealth claim" },
+  { pattern: /\b(send|donate|pay|transfer)\s+(me|us)\s+(money|rs|rupees|₹|\$)/i, label: "solicitation" },
+  { pattern: /\b(curse|black magic|vashikaran|tantrik)\s+(will|can)\s+(destroy|harm|kill)/i, label: "occult harm" },
+  { pattern: /\bleave\s+your\s+(family|children|wife|husband|job)\b/i, label: "urging abandonment" },
+];
+
+/** Signs the model produced scaffolding instead of a script. */
+const ARTEFACTS: RegExp[] = [
+  /\[(insert|your|placeholder|todo|tbd)/i,
+  /\bas an ai\b/i,
+  /\bi'?m sorry,? (but )?i (can'?t|cannot)\b/i,
+  /\blorem ipsum\b/i,
+  /\{\{.*?\}\}/,
+  /^\s*(script|title|body|description)\s*:\s*$/im,
+];
+
+/**
+ * Fold leetspeak and separator-obfuscation so "f.u.c.k" and "sh1t" are caught.
+ * Only used for detection — never for the text that gets published.
+ */
+function normalise(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[àáâãäå]/g, "a")
+    .replace(/[èéêë]/g, "e")
+    .replace(/[ìíîï]/g, "i")
+    .replace(/[òóôõö]/g, "o")
+    .replace(/[ùúûü]/g, "u")
+    .replace(/0/g, "o")
+    .replace(/1/g, "i")
+    .replace(/3/g, "e")
+    .replace(/4/g, "a")
+    .replace(/5/g, "s")
+    .replace(/7/g, "t")
+    .replace(/@/g, "a")
+    .replace(/\$/g, "s")
+    // collapse characters used to break up words: f*u*c*k -> fuck
+    .replace(/[._\-*+~^|]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+export interface SafetyIssue {
+  category: "profanity" | "slur" | "forbidden_topic" | "harmful_claim" | "artefact";
+  detail: string;
+}
+
+export interface SafetyReport {
+  safe: boolean;
+  issues: SafetyIssue[];
+}
+
+/** Escape a literal for safe insertion into a RegExp. */
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function checkSafety(...texts: string[]): SafetyReport {
+  const issues: SafetyIssue[] = [];
+  const raw = texts.filter(Boolean).join("\n");
+  const folded = normalise(raw);
+
+  for (const word of SLURS) {
+    if (new RegExp(`\\b${escapeRegex(normalise(word))}\\b`).test(folded)) {
+      issues.push({ category: "slur", detail: word });
+    }
+  }
+
+  for (const word of PROFANITY) {
+    if (new RegExp(`\\b${escapeRegex(normalise(word))}\\b`).test(folded)) {
+      issues.push({ category: "profanity", detail: word });
+    }
+  }
+
+  for (const { pattern, label } of FORBIDDEN_TOPICS) {
+    if (pattern.test(raw)) {
+      issues.push({ category: "forbidden_topic", detail: label });
+    }
+  }
+
+  for (const { pattern, label } of HARMFUL_CLAIMS) {
+    if (pattern.test(raw)) {
+      issues.push({ category: "harmful_claim", detail: label });
+    }
+  }
+
+  for (const pattern of ARTEFACTS) {
+    if (pattern.test(raw)) {
+      issues.push({ category: "artefact", detail: pattern.source });
+    }
+  }
+
+  return { safe: issues.length === 0, issues };
+}

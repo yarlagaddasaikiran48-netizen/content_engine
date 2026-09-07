@@ -1,0 +1,222 @@
+/**
+ * Seed the topic ledger.
+ *
+ *   npm run seed:topics
+ *
+ * Loads every one of the 700 Bhagavad Gita verses from the free Vedic
+ * Scriptures API — Sanskrit, transliteration and a public-domain English
+ * translation for each — plus the curated Purana / Upanishad / Ramayana corpus.
+ *
+ * Re-running is safe and idempotent: rows are inserted with ON CONFLICT DO
+ * NOTHING, so topics you have already used keep their `times_used` and are
+ * never handed out a second time.
+ */
+
+import "dotenv/config";
+import { createClient } from "@supabase/supabase-js";
+
+import {
+  CHAPTER_THEMES,
+  fetchGitaChapters,
+  fetchGitaVerse,
+  type GitaChapter,
+} from "../src/lib/sources/gita";
+import { assertUniqueKeys, CORPUS } from "../src/lib/sources/puranas";
+
+interface LedgerRow {
+  topic_key: string;
+  source: "gita" | "purana" | "upanishad";
+  scripture: string;
+  reference: string;
+  title: string;
+  theme: string;
+  summary: string;
+  sanskrit: string | null;
+  translation: string | null;
+  translator: string | null;
+  citation_url: string;
+  weight: number;
+}
+
+/**
+ * Verses that are widely known and land hardest as a Short. They get a higher
+ * weight so the channel opens strong before moving into deeper cuts.
+ */
+const SIGNATURE_VERSES = new Set([
+  "2.47", "2.13", "2.20", "2.22", "2.62", "2.63", "2.70", "3.35",
+  "4.7", "4.8", "6.5", "6.6", "6.35", "9.22", "12.13", "12.15",
+  "15.7", "16.21", "18.66", "18.78", "2.48", "3.21", "5.10", "7.16",
+]);
+
+function weightFor(chapter: number, verse: number): number {
+  const key = `${chapter}.${verse}`;
+  if (SIGNATURE_VERSES.has(key)) return 200;
+  // Chapters 2, 12 and 18 are the most quotable overall.
+  if ([2, 12, 18].includes(chapter)) return 140;
+  if ([3, 4, 6, 9].includes(chapter)) return 120;
+  return 100;
+}
+
+/** Run `worker` over `items` with bounded concurrency. */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+
+  async function run(): Promise<void> {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await worker(items[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run));
+  return results;
+}
+
+async function buildGitaRows(chapters: GitaChapter[]): Promise<LedgerRow[]> {
+  const targets: Array<{ chapter: number; verse: number }> = [];
+  for (const chapter of chapters) {
+    for (let verse = 1; verse <= chapter.verses_count; verse += 1) {
+      targets.push({ chapter: chapter.chapter_number, verse });
+    }
+  }
+
+  console.log(`  fetching ${targets.length} verses (concurrency 8)…`);
+  let done = 0;
+  let failed = 0;
+
+  const rows = await mapWithConcurrency(targets, 8, async ({ chapter, verse }) => {
+    let attempt = 0;
+    while (attempt < 3) {
+      try {
+        const data = await fetchGitaVerse(chapter, verse);
+        done += 1;
+        if (done % 100 === 0) console.log(`    ${done}/${targets.length}`);
+        if (!data) return null;
+
+        const chapterMeta = chapters.find((item) => item.chapter_number === chapter);
+        const row: LedgerRow = {
+          topic_key: `gita:${chapter}.${verse}`,
+          source: "gita",
+          scripture: "Bhagavad Gita",
+          reference: `Chapter ${chapter}, Verse ${verse}`,
+          title: `Gita ${chapter}.${verse} — ${chapterMeta?.translation ?? "Bhagavad Gita"}`,
+          theme: CHAPTER_THEMES[chapter] ?? "spiritual wisdom",
+          summary:
+            `From ${chapterMeta?.transliteration ?? `Chapter ${chapter}`} ` +
+            `(${chapterMeta?.meaning?.en ?? "Bhagavad Gita"}). ` +
+            `Krishna speaks this verse to Arjuna on the battlefield of Kurukshetra. ` +
+            `Translation: ${data.translation}`,
+          sanskrit: data.sanskrit || null,
+          translation: data.translation,
+          translator: data.translator,
+          citation_url: data.citationUrl,
+          weight: weightFor(chapter, verse),
+        };
+        return row;
+      } catch {
+        attempt += 1;
+        if (attempt >= 3) {
+          failed += 1;
+          return null;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+      }
+    }
+    return null;
+  });
+
+  if (failed > 0) console.log(`  ${failed} verses could not be fetched and were skipped.`);
+  return rows.filter((row): row is LedgerRow => row !== null);
+}
+
+function buildCorpusRows(): LedgerRow[] {
+  assertUniqueKeys();
+  return CORPUS.map((entry) => ({
+    topic_key: entry.key,
+    source: entry.source,
+    scripture: entry.scripture,
+    reference: entry.reference,
+    title: entry.title,
+    theme: entry.theme,
+    summary: entry.summary,
+    sanskrit: null,
+    translation: null,
+    translator: null,
+    citation_url: entry.citationUrl,
+    weight: entry.weight ?? 100,
+  }));
+}
+
+async function main(): Promise<void> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !key) {
+    console.error(
+      "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.\n" +
+        "Copy .env.example to .env.local and fill them in first.",
+    );
+    process.exit(1);
+  }
+
+  const supabase = createClient(url, key, {
+    auth: { persistSession: false },
+  });
+
+  console.log("Seeding topic ledger\n");
+
+  console.log("→ Bhagavad Gita");
+  const chapters = await fetchGitaChapters();
+  console.log(`  ${chapters.length} chapters found.`);
+  const gitaRows = await buildGitaRows(chapters);
+  console.log(`  ${gitaRows.length} verses ready.\n`);
+
+  console.log("→ Puranas, Upanishads and Ramayana");
+  const corpusRows = buildCorpusRows();
+  console.log(`  ${corpusRows.length} curated topics ready.\n`);
+
+  const all = [...gitaRows, ...corpusRows];
+
+  console.log(`→ Writing ${all.length} topics to Supabase…`);
+  let inserted = 0;
+
+  for (let index = 0; index < all.length; index += 100) {
+    const batch = all.slice(index, index + 100);
+    const { error } = await supabase
+      .from("topic_ledger")
+      // ignoreDuplicates keeps already-used topics untouched on a re-run.
+      .upsert(batch, { onConflict: "topic_key", ignoreDuplicates: true });
+
+    if (error) {
+      console.error(`  batch at ${index} failed: ${error.message}`);
+      process.exit(1);
+    }
+    inserted += batch.length;
+    console.log(`  ${inserted}/${all.length}`);
+  }
+
+  const { count: total } = await supabase
+    .from("topic_ledger")
+    .select("*", { count: "exact", head: true });
+  const { count: unused } = await supabase
+    .from("topic_ledger")
+    .select("*", { count: "exact", head: true })
+    .eq("times_used", 0);
+
+  console.log(
+    `\nDone. ${total ?? 0} topics in the ledger, ${unused ?? 0} never used.\n` +
+      `At one video per day that is about ${Math.floor((unused ?? 0) / 365)} year(s) ` +
+      `and ${(unused ?? 0) % 365} day(s) of content with zero repeats.`,
+  );
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

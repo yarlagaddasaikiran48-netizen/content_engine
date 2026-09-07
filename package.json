@@ -1,0 +1,40 @@
+{
+  "name": "spiritual-content-engine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Automated Indian spiritual content engine for YouTube Shorts. Zero-cost stack: Next.js on Vercel + Supabase + Gemini + Edge TTS + GitHub Actions.",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "seed:topics": "tsx scripts/seed-topics.ts",
+    "auth:youtube": "tsx scripts/get-youtube-token.ts",
+    "tts:test": "tsx scripts/test-tts.ts",
+    "render": "tsx scripts/render-and-publish.ts",
+    "selftest": "tsx scripts/self-test.ts"
+  },
+  "dependencies": {
+    "@google/genai": "^1.30.0",
+    "@supabase/supabase-js": "^2.58.0",
+    "next": "^15.5.4",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.14",
+    "@types/node": "^22.18.6",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "@types/ws": "^8.18.1",
+    "dotenv": "^17.2.2",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.2"
+  }
+}

@@ -1,0 +1,312 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   Design tokens
+   Warm, low-glare palette. This dashboard gets opened at 6am and at midnight,
+   so dark mode is a first-class citizen, not an afterthought.
+   ========================================================================== */
+:root {
+  --bg: #faf7f2;
+  --bg-elevated: #ffffff;
+  --bg-sunken: #f2ece3;
+  --text: #1c1917;
+  --text-muted: #6b6259;
+  --text-faint: #9a9088;
+  --border: #e6ddd1;
+  --border-strong: #d6c9b6;
+
+  --accent: #b45309;
+  --accent-hover: #92400e;
+  --accent-soft: #fef3e2;
+
+  --danger: #b91c1c;
+  --danger-soft: #fef2f2;
+  --success: #15803d;
+  --success-soft: #f0fdf4;
+  --info: #1d4ed8;
+  --info-soft: #eff6ff;
+
+  --radius: 14px;
+  --shadow: 0 1px 2px rgb(28 25 23 / 0.06), 0 4px 16px rgb(28 25 23 / 0.05);
+
+  /* Safe areas for notched phones; 0px on everything else. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0c0a09;
+    --bg-elevated: #1a1614;
+    --bg-sunken: #131110;
+    --text: #f5f1eb;
+    --text-muted: #a8a09a;
+    --text-faint: #78706a;
+    --border: #2c2622;
+    --border-strong: #3f3833;
+
+    --accent: #f59e0b;
+    --accent-hover: #fbbf24;
+    --accent-soft: #2a1d0a;
+
+    --danger: #f87171;
+    --danger-soft: #2a1414;
+    --success: #4ade80;
+    --success-soft: #0f2417;
+    --info: #93c5fd;
+    --info-soft: #111c2e;
+
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.3);
+  }
+}
+
+/* ==========================================================================
+   Base
+   ========================================================================== */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  /* Stops iOS Safari from inflating text in landscape. */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  /* Never allow a sideways scroll on a phone. */
+  overflow-x: hidden;
+  /* Stops the whole page bouncing when a card is scrolled to its end. */
+  overscroll-behavior-y: none;
+  min-height: 100dvh;
+}
+
+/* Every interactive element is at least 44px tall — Apple's HIG minimum and
+   comfortably above Material's 48dp guidance for the primary actions. */
+button,
+a.btn,
+select {
+  touch-action: manipulation;
+  min-height: 44px;
+  font-family: inherit;
+  font-size: 1rem;
+}
+
+/* 16px minimum on inputs, or iOS zooms the viewport on focus. */
+input,
+textarea,
+select {
+  font-size: 16px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ==========================================================================
+   Components
+   ========================================================================== */
+.app-shell {
+  max-width: 680px;
+  margin-inline: auto;
+  padding-inline: 16px;
+  /* Clear the sticky action bar plus the home indicator. */
+  padding-bottom: calc(88px + var(--safe-bottom));
+}
+
+.card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.12s ease, background-color 0.12s ease, opacity 0.12s ease;
+  user-select: none;
+}
+.btn:active:not(:disabled) {
+  /* Touch devices have no hover, so the press state has to do the work. */
+  transform: scale(0.975);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  .btn-primary {
+    color: #1a1200;
+  }
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: var(--border-strong);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--bg-sunken);
+  color: var(--text);
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border-color: var(--border-strong);
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+/* Horizontal chip row that scrolls instead of wrapping or overflowing. */
+.chip-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  padding-block: 2px;
+}
+.chip-row::-webkit-scrollbar {
+  display: none;
+}
+
+.chip {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  padding: 8px 14px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.chip[data-active="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  .chip[data-active="true"] {
+    color: #1a1200;
+  }
+}
+
+/* Native audio element, sized for a thumb. */
+audio {
+  width: 100%;
+  height: 44px;
+  display: block;
+}
+
+/* Collapsed script preview. */
+.clamp-4 {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sticky-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border);
+  padding: 10px 16px calc(10px + var(--safe-bottom));
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(96px + var(--safe-bottom));
+  z-index: 60;
+  max-width: min(560px, calc(100vw - 32px));
+  width: max-content;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  animation: toast-in 0.2s ease;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Long words (URLs, Sanskrit transliteration) must never widen the layout. */
+.wrap-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}

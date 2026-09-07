@@ -1,15 +1,33 @@
-# Secrets — never commit real credentials
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# next.js
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# secrets — never commit real credentials
 .env
-token.json
+.env.local
+.env*.local
+youtube-token.json
 client_secret*.json
 
-# Generated media and metadata
+# generated media
 output/
+tmp/
 *.mp3
 *.mp4
+*.srt
 
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-venv/
+# editors / os
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# vercel
+.vercel
