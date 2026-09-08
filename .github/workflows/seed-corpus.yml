@@ -11,10 +11,15 @@ on:
   workflow_dispatch:
     inputs:
       chapters:
-        description: "Read the Purana chapters (off = curated topics and Gita only)"
+        description: "Read the Purana chapters — the long one"
         required: true
         type: boolean
         default: true
+      gita:
+        description: "Also re-fetch the 700 Gita verses (skip if they are already in)"
+        required: true
+        type: boolean
+        default: false
       puranas:
         description: "Comma-separated keys to limit to, e.g. linga,markandeya. Blank = all eighteen."
         required: false
@@ -65,15 +70,41 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Read the books and write the ledger
+      # The stages are separate steps on purpose. Job logs need admin rights on
+      # the repository, but every step's own pass or fail is public — so when
+      # this breaks, the name of the red step says where, with no log to read.
+      - name: Check the toolchain and both sources are reachable
+        run: |
+          node --version
+          npx tsx --version
+          for url in https://vedicscriptures.github.io/chapters \
+                     https://www.wisdomlib.org/hinduism/book/the-linga-purana; do
+            code=$(curl -s -o /dev/null -L -A "Mozilla/5.0" -w "%{http_code}" --max-time 30 "$url" || echo "000")
+            echo "$code  $url"
+            if [ "$code" != "200" ]; then
+              echo "::error::$url is unreachable from this runner (HTTP $code)."
+              exit 1
+            fi
+          done
+
+      - name: Write the curated topics
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SETTINGS_MASTER_KEY: ${{ secrets.SETTINGS_MASTER_KEY }}
-        run: |
-          args=""
-          if [ "${{ inputs.chapters }}" = "true" ]; then args="$args --chapters=true"; fi
-          if [ -n "${{ inputs.puranas }}" ]; then args="$args --puranas=${{ inputs.puranas }}"; fi
-          args="$args --per-purana=${{ inputs.per_purana }}"
-          echo "npx tsx scripts/seed-topics.ts$args"
-          npx tsx scripts/seed-topics.ts $args
+        run: npx tsx scripts/seed-topics.ts --gita=false --curated=true --chapters=false
+
+      - name: Fetch the Gita verses
+        if: ${{ inputs.gita }}
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/seed-topics.ts --gita=true --curated=false --chapters=false
+
+      - name: Read the Purana chapters
+        if: ${{ inputs.chapters }}
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PURANAS: ${{ inputs.puranas }}
+          PER_PURANA: ${{ inputs.per_purana }}
+        run: npx tsx scripts/seed-topics.ts --gita=false --curated=false --chapters=true

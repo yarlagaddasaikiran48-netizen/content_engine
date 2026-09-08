@@ -162,6 +162,12 @@ function flag(name: string): string | undefined {
   return match ? match.slice(prefix.length) : process.env[name.toUpperCase().replace(/-/g, "_")];
 }
 
+function bool(name: string, fallback: boolean): boolean {
+  const raw = flag(name);
+  if (raw === undefined || raw === "") return fallback;
+  return raw !== "false" && raw !== "0" && raw !== "no";
+}
+
 /**
  * Every canto of every Purana that has an open translation.
  *
@@ -240,24 +246,45 @@ async function main(): Promise<void> {
     auth: { persistSession: false },
   });
 
-  console.log("Seeding topic ledger\n");
+  // Each stage can be run on its own. That is not a convenience: the Gita
+  // stage depends on an external API, the chapter stage on a different site,
+  // and bundling all three means one unreachable host loses the other two.
+  const wantGita = bool("gita", true);
+  const wantCurated = bool("curated", true);
+  const wantChapters = bool("chapters", false);
 
-  console.log("→ Bhagavad Gita");
-  const chapters = await fetchGitaChapters();
-  console.log(`  ${chapters.length} chapters found.`);
-  const gitaRows = await buildGitaRows(chapters);
-  console.log(`  ${gitaRows.length} verses ready.\n`);
+  console.log(
+    `Seeding topic ledger (gita=${wantGita} curated=${wantCurated} chapters=${wantChapters})\n`,
+  );
 
-  console.log("→ Puranas, Upanishads and Ramayana");
-  const corpusRows = buildCorpusRows();
-  console.log(`  ${corpusRows.length} curated topics ready.\n`);
+  let gitaRows: LedgerRow[] = [];
+  if (wantGita) {
+    console.log("→ Bhagavad Gita");
+    const chapters = await fetchGitaChapters();
+    console.log(`  ${chapters.length} chapters found.`);
+    gitaRows = await buildGitaRows(chapters);
+    console.log(`  ${gitaRows.length} verses ready.\n`);
+  }
+
+  let corpusRows: LedgerRow[] = [];
+  if (wantCurated) {
+    console.log("→ Puranas, Upanishads and Ramayana");
+    corpusRows = buildCorpusRows();
+    console.log(`  ${corpusRows.length} curated topics ready.\n`);
+  }
 
   // Off by default: it makes a couple of thousand requests to wisdomlib, which
   // is not something a routine re-seed should do without being asked.
   let chapterRows: LedgerRow[] = [];
-  if (flag("chapters") !== undefined && flag("chapters") !== "false") {
-    const only = flag("puranas")?.split(",").map((k) => k.trim()).filter(Boolean) ?? null;
-    const perPurana = Number(flag("per-purana") ?? 500);
+  if (wantChapters) {
+    // An empty value means "all of them", not "none of them". Passed through a
+    // workflow input, blank is exactly what arrives, and an empty allow-list
+    // would silently skip every Purana while reporting success.
+    const keys = (flag("puranas") ?? "").split(",").map((k) => k.trim()).filter(Boolean);
+    const only = keys.length > 0 ? keys : null;
+
+    const requested = Number(flag("per-purana"));
+    const perPurana = Number.isFinite(requested) && requested > 0 ? requested : 500;
 
     console.log("→ Purana chapters, read from the published translations");
     if (only) console.log(`  limited to: ${only.join(", ")}`);
@@ -266,6 +293,11 @@ async function main(): Promise<void> {
   }
 
   const all = [...gitaRows, ...corpusRows, ...chapterRows];
+
+  if (all.length === 0) {
+    console.log("Nothing selected to seed. Pass --gita, --curated or --chapters.");
+    return;
+  }
 
   console.log(`→ Writing ${all.length} topics to Supabase…`);
   let inserted = 0;
