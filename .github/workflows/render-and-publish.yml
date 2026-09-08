@@ -72,6 +72,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The narration is Telugu and the runner ships DejaVu, which has no
+      # Indic glyphs whatsoever. Without this the captions burn in as a row of
+      # empty boxes, and nothing in the render fails to say so.
+      - name: Install the Telugu caption font
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-telugu fontconfig
+          fc-cache -f
+          fc-list | grep -i telugu | head -n 5
+
       - name: Confirm FFmpeg is available
         run: |
           ffmpeg -version | head -n 1

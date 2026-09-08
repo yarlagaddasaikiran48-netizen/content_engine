@@ -31,12 +31,17 @@ import { loadConfig, type AppConfig } from "../src/lib/settings/config";
 import { uploadAudio } from "../src/lib/supabase/admin";
 import { contentTypeFor, extensionFor, speak } from "../src/lib/tts";
 import { deityFolder } from "../src/lib/render/deity";
+import {
+  buildAss,
+  buildCues,
+  kenBurns,
+  CAPTION_FONT,
+  FPS,
+  HEIGHT,
+  WIDTH,
+} from "../src/lib/render/video";
 import { normaliseTone } from "../src/lib/tts/voice";
 import type { SpiritualVideo } from "../src/lib/types";
-
-const WIDTH = 1080;
-const HEIGHT = 1920;
-const FPS = 30;
 
 const TMP_DIR = resolve(process.cwd(), "tmp-render");
 const BACKGROUND_DIR = resolve(process.cwd(), "assets", "backgrounds");
@@ -71,72 +76,6 @@ function run(command: string, args: string[], cwd?: string): string {
   return result.stdout;
 }
 
-function timestamp(seconds: number): string {
-  const clamped = Math.max(0, seconds);
-  const hours = Math.floor(clamped / 3600);
-  const minutes = Math.floor((clamped % 3600) / 60);
-  const secs = Math.floor(clamped % 60);
-  const millis = Math.round((clamped - Math.floor(clamped)) * 1000);
-  const pad = (value: number, size = 2) => String(value).padStart(size, "0");
-  return `${pad(hours)}:${pad(minutes)}:${pad(secs)},${pad(millis, 3)}`;
-}
-
-/**
- * Split narration into short caption cues.
- *
- * Shorts are watched muted more often than not, so the captions carry the
- * script. Three to five words per cue is the sweet spot: long enough to read
- * in one glance, short enough to stay in rhythm with the voice.
- */
-function buildCues(script: string, totalSeconds: number): Array<{
-  start: number;
-  end: number;
-  text: string;
-}> {
-  const words = script.split(/\s+/).filter(Boolean);
-  const groups: string[][] = [];
-  let current: string[] = [];
-
-  for (const word of words) {
-    current.push(word);
-    const endsClause = /[.!?,;:]$/.test(word);
-    if (current.length >= 5 || (endsClause && current.length >= 3)) {
-      groups.push(current);
-      current = [];
-    }
-  }
-  if (current.length > 0) {
-    // Avoid a lonely one-word final cue.
-    if (current.length === 1 && groups.length > 0) groups[groups.length - 1].push(...current);
-    else groups.push(current);
-  }
-
-  // Weight each cue by character count so long phrases hold the screen longer.
-  const weights = groups.map((group) => group.join(" ").length);
-  const totalWeight = weights.reduce((sum, value) => sum + value, 0) || 1;
-
-  let elapsed = 0;
-  return groups.map((group, index) => {
-    const share = (weights[index] / totalWeight) * totalSeconds;
-    const start = elapsed;
-    elapsed += share;
-    return {
-      start,
-      end: Math.min(elapsed, totalSeconds),
-      text: group.join(" "),
-    };
-  });
-}
-
-function buildSrt(cues: Array<{ start: number; end: number; text: string }>): string {
-  return cues
-    .map(
-      (cue, index) =>
-        `${index + 1}\n${timestamp(cue.start)} --> ${timestamp(cue.end)}\n${cue.text}\n`,
-    )
-    .join("\n");
-}
-
 function probeDuration(file: string): number {
   const output = run("ffprobe", [
     "-v", "error",
@@ -149,6 +88,39 @@ function probeDuration(file: string): number {
     throw new Error(`ffprobe could not read a duration from ${file}.`);
   }
   return seconds;
+}
+
+/**
+ * Refuse to render if the caption font is not installed.
+ *
+ * libass does not fail when it has no glyph for a character — it draws an
+ * empty box and carries on, and FFmpeg exits 0. A whole Telugu narration comes
+ * out as a row of tofu with nothing anywhere saying why, and the first thing
+ * that notices is a viewer.
+ *
+ * Checked with fc-list, which is Linux-only. Where it is missing — a Windows
+ * machine debugging a render — this says so and continues, because there the
+ * system font fallback will find a Telugu face on its own.
+ */
+function assertFontPresent(font: string): void {
+  let listed: string;
+  try {
+    listed = run("fc-list", [":", "family"]);
+  } catch {
+    console.log(`  fonts: no fc-list here; trusting the system to find "${font}".`);
+    return;
+  }
+
+  if (listed.toLowerCase().includes(font.toLowerCase())) {
+    console.log(`  fonts: "${font}" is installed.`);
+    return;
+  }
+
+  throw new Error(
+    `The caption font "${font}" is not installed, so the Telugu narration would ` +
+      `burn in as empty boxes. Install it before rendering — on Ubuntu that is ` +
+      `"sudo apt-get install -y fonts-noto-telugu && fc-cache -f".`,
+  );
 }
 
 function imagesIn(dir: string): string[] {
@@ -181,23 +153,6 @@ function pickBackground(folder: string): { file: string | null; matched: boolean
 
   return { file: null, matched: false };
 }
-
-/** libass style. Big, heavy, high-contrast — readable on a phone in daylight. */
-const SUBTITLE_STYLE = [
-  "Fontname=DejaVu Sans",
-  "FontSize=17",
-  "Bold=1",
-  "PrimaryColour=&H00FFFFFF",
-  "OutlineColour=&H00000000",
-  "BackColour=&H90000000",
-  "BorderStyle=1",
-  "Outline=2.5",
-  "Shadow=1",
-  "Alignment=2", // bottom-centre
-  "MarginV=260",
-  "MarginL=90",
-  "MarginR=90",
-].join(",");
 
 function escapeDrawText(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "");
@@ -378,7 +333,7 @@ async function main(): Promise<void> {
     rmSync(TMP_DIR, { recursive: true, force: true });
     mkdirSync(TMP_DIR, { recursive: true });
 
-    const srtPath = join(TMP_DIR, "captions.srt");
+    const captionPath = join(TMP_DIR, "captions.ass");
     const outputPath = join(TMP_DIR, "short.mp4");
 
     // ---- 3. audio ----
@@ -427,9 +382,10 @@ async function main(): Promise<void> {
     console.log(`  audio ${audioSeconds.toFixed(2)}s → video ${duration}s`);
 
     // ---- 4. captions ----
+    assertFontPresent(CAPTION_FONT);
     writeFileSync(
-      srtPath,
-      buildSrt(buildCues(video.script_body, audioSeconds)),
+      captionPath,
+      buildAss(buildCues(video.script_body, audioSeconds)),
       "utf8",
     );
 
@@ -465,7 +421,9 @@ async function main(): Promise<void> {
     const endCard = cfg.endCardText.trim();
 
     const commonFilters = [
-      `subtitles=captions.srt:force_style='${SUBTITLE_STYLE}'`,
+      // No force_style: buildAss already declares PlayRes and the full style,
+      // so overriding it here would only be a second place to keep in step.
+      "subtitles=captions.ass",
       footer
         ? `drawtext=text='${footer}':fontcolor=white@0.72:fontsize=30:x=(w-text_w)/2:y=h-140`
         : null,
@@ -475,6 +433,11 @@ async function main(): Promise<void> {
           `enable='gte(t,${endCardFrom.toFixed(2)})'`
         : null,
       "vignette=PI/5",
+      // A little grain, added last so it sits over the whole composite rather
+      // than being smeared by the scaler. It costs a few hundred KB and stops
+      // large flat areas — a sky, a gradient — banding into visible steps on a
+      // phone screen, which is the other thing that reads as cheap.
+      "noise=alls=4:allf=t",
       `fade=t=in:st=0:d=0.5,fade=t=out:st=${(duration - 0.5).toFixed(2)}:d=0.5`,
       "format=yuv420p",
     ]
@@ -484,17 +447,18 @@ async function main(): Promise<void> {
     const args: string[] = ["-y", "-hide_banner", "-loglevel", "error"];
 
     if (background) {
-      const zoomFrames = Math.ceil(duration * FPS);
       args.push(
         "-loop", "1",
         "-i", background,
         "-i", audioFile,
         "-filter_complex",
-        `[0:v]scale=${WIDTH * 1.2}:${HEIGHT * 1.2}:force_original_aspect_ratio=increase,` +
-          `crop=${WIDTH * 1.2}:${HEIGHT * 1.2},` +
-          // Slow Ken Burns push so a still image never looks static.
-          `zoompan=z='min(zoom+0.0006,1.15)':d=${zoomFrames}:s=${WIDTH}x${HEIGHT}:fps=${FPS},` +
-          `boxblur=6:1,eq=brightness=-0.10:saturation=1.15,` +
+        `[0:v]${kenBurns(duration)},` +
+          // Was boxblur=6:1. That existed to stop a decorative background
+          // competing with the captions, and it is exactly wrong now that the
+          // background is the subject: it blurred the god into a wash. The
+          // captions stay readable on a heavier outline and a real shadow
+          // instead, and the image keeps its detail.
+          `eq=brightness=-0.06:saturation=1.12:contrast=1.04,` +
           commonFilters +
           "[v]",
       );
@@ -502,8 +466,12 @@ async function main(): Promise<void> {
       args.push(
         "-f", "lavfi",
         "-i",
+        // The no-artwork fallback. Slower and softer than it was: a radial
+        // wash this size reads as a screensaver if it moves quickly, and the
+        // point is for it to be unobtrusive behind the words rather than
+        // interesting on its own.
         `gradients=size=${WIDTH}x${HEIGHT}:c0=0x140a24:c1=0x3d1b3a:c2=0x6d2f26:c3=0x1b1030:` +
-          `n=4:type=radial:speed=0.012:rate=${FPS}:duration=${duration}`,
+          `n=4:type=radial:speed=0.007:rate=${FPS}:duration=${duration}`,
         "-i", audioFile,
         "-filter_complex", `[0:v]${commonFilters}[v]`,
       );
