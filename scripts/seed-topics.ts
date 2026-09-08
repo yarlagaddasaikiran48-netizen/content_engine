@@ -352,7 +352,11 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((error) => {
+main().catch((error: unknown) => {
   console.error(error);
+  if (process.env.GITHUB_ACTIONS === "true") {
+    const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    console.error(`::error::seed-topics failed — ${message.replace(/[\r\n]+/g, " ")}`);
+  }
   process.exit(1);
 });

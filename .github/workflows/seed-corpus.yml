@@ -172,18 +172,33 @@ jobs:
           esac
           exit 1
 
+      # Every seed stage runs through the same wrapper. It tees the output to a
+      # file and, on failure, republishes the tail as an ::error:: annotation.
+      # Job logs need admin rights on this repository and annotations do not, so
+      # without this a crash reaches the operator as "exit code 1" and nothing
+      # else — which is exactly how three runs were spent learning nothing.
       - name: Write the curated topics
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: npx tsx scripts/seed-topics.ts --gita=false --curated=true --chapters=false
+        run: |
+          set -o pipefail
+          if ! npx tsx scripts/seed-topics.ts --gita=false --curated=true --chapters=false 2>&1 | tee /tmp/seed.log; then
+            echo "::error::curated stage failed: $(tail -c 900 /tmp/seed.log | tr '\n' ' ' | tr -s ' ')"
+            exit 1
+          fi
 
       - name: Fetch the Gita verses
         if: ${{ inputs.gita }}
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: npx tsx scripts/seed-topics.ts --gita=true --curated=false --chapters=false
+        run: |
+          set -o pipefail
+          if ! npx tsx scripts/seed-topics.ts --gita=true --curated=false --chapters=false 2>&1 | tee /tmp/seed.log; then
+            echo "::error::gita stage failed: $(tail -c 900 /tmp/seed.log | tr '\n' ' ' | tr -s ' ')"
+            exit 1
+          fi
 
       - name: Read the Purana chapters
         if: ${{ inputs.chapters }}
@@ -192,4 +207,9 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           PURANAS: ${{ inputs.puranas }}
           PER_PURANA: ${{ inputs.per_purana }}
-        run: npx tsx scripts/seed-topics.ts --gita=false --curated=false --chapters=true
+        run: |
+          set -o pipefail
+          if ! npx tsx scripts/seed-topics.ts --gita=false --curated=false --chapters=true 2>&1 | tee /tmp/seed.log; then
+            echo "::error::chapter stage failed: $(tail -c 900 /tmp/seed.log | tr '\n' ' ' | tr -s ' ')"
+            exit 1
+          fi
