@@ -45,7 +45,7 @@ export function buildPrompt({
 
   sections.push(`TODAY'S CONTEXT
 ${hook.summary}
-Use this to decide the emotional angle. Do not force it. If the occasion does not fit the passage, ignore it and write the timeless version.`);
+Use this only to choose which part of the episode to dwell on — a Shiva festival is a reason to linger on a Shiva episode's central moment, nothing more. Never mention the occasion, the date or the season in the script, and never use it to connect the story to the viewer's own week. If it does not fit the passage, ignore it completely.`);
 
   // When the topic belongs to one of the eighteen Maha Puranas, tell the model
   // what kind of text it is holding. A Garuda Purana script and a Bhagavata
