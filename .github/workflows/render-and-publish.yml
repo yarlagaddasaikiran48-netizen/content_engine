@@ -60,10 +60,13 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v4
 
+      # 22, not 20: supabase-js reaches for a global WebSocket the moment a
+      # client is constructed, and Node 20 has none — createClient throws
+      # before a single query is sent.
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
 
       - name: Install dependencies
