@@ -9,12 +9,14 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/deck
  *
- * The swipe deck: everything still awaiting a decision.
+ * The swipe deck: everything still awaiting a decision, and nothing else.
  *
- * Order is unseen first, then rejected-but-not-yet-expired. That is the
- * operator's own rule — a reject is a deferral for twenty-four hours, not a
- * deletion — and putting recycled cards behind fresh ones means a change of
- * mind is possible without the same card blocking the top of the pile.
+ * Rejected cards used to come back around behind the fresh ones, on the theory
+ * that a reject was a deferral for twenty-four hours rather than a deletion.
+ * In practice that theory was wrong: the operator swiped seven scripts away
+ * and then had to keep swiping the same seven away, which is the opposite of
+ * what rejecting one is for. A reject is now final — the card is gone from the
+ * deck immediately, and the scheduler deletes the row when its window closes.
  */
 export async function GET() {
   try {
@@ -24,8 +26,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from("spiritual_videos")
       .select("*")
-      .in("status", ["pending", "rejected"])
-      .order("status", { ascending: true }) // 'pending' sorts before 'rejected'
+      .eq("status", "pending")
       .order("seen_at", { ascending: true, nullsFirst: true })
       .order("created_at", { ascending: true })
       .limit(60);
