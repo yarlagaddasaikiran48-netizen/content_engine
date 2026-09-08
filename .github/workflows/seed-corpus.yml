@@ -111,8 +111,38 @@ jobs:
           echo "GET /rest/v1/topic_ledger -> HTTP $code"
 
           if [ "$code" = "200" ]; then
-            echo "Credentials work and topic_ledger is readable."
-            exit 0
+            echo "topic_ledger is readable."
+
+            # Reading proves less than it looks. A publishable key can often
+            # read a table it cannot write, and a table can exist while missing
+            # the columns we insert into. So write one sentinel row, with the
+            # exact column set the seeder uses, and take it out again.
+            row='{"topic_key":"probe:ci-write-check","source":"purana","scripture":"probe","reference":"probe","title":"probe","theme":"probe","summary":"probe","sanskrit":null,"translation":null,"translator":null,"citation_url":"https://example.com","weight":1}'
+            wcode=$(curl -s -o /tmp/write.json -w "%{http_code}" --max-time 30 \
+              -X POST "$base/rest/v1/topic_ledger" \
+              -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+              -H "Content-Type: application/json" \
+              -H "Prefer: return=minimal,resolution=merge-duplicates" \
+              -d "$row")
+            echo "POST /rest/v1/topic_ledger -> HTTP $wcode"
+
+            curl -s -o /dev/null --max-time 30 \
+              -X DELETE "$base/rest/v1/topic_ledger?topic_key=eq.probe:ci-write-check" \
+              -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+              -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" || true
+
+            case "$wcode" in
+              20*) echo "Writes work too. The credentials are not the problem." ; exit 0 ;;
+              *)
+                body=$(tr -d '\n' < /tmp/write.json | head -c 500)
+                echo "::error::Supabase refused the write (HTTP $wcode): $body"
+                case "$SUPABASE_SERVICE_ROLE_KEY" in
+                  sb_publishable_*) echo "::error::The key is a PUBLISHABLE key. It can read but never write." ;;
+                  sb_secret_*|eyJ*) echo "::error::Key kind looks right, so this is the table rather than the key." ;;
+                esac
+                exit 1 ;;
+            esac
           fi
 
           # Only now, and only to explain the failure. Shapes are reported

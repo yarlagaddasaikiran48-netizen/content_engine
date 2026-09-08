@@ -320,6 +320,17 @@ async function main(): Promise<void> {
       if (error.hint) console.error(`    hint:    ${error.hint}`);
       console.error(`    project: ${new URL(url).host}`);
       console.error(`    columns: ${Object.keys(batch[0] ?? {}).join(", ")}`);
+
+      // Job logs need admin rights on the repository; annotations do not. On a
+      // runner the whole reason for this line is that it reaches somebody who
+      // can only see the summary page.
+      if (process.env.GITHUB_ACTIONS === "true") {
+        const parts = [error.message, error.code, error.details, error.hint]
+          .filter(Boolean)
+          .join(" | ")
+          .replace(/[\r\n]+/g, " ");
+        console.error(`::error::Supabase rejected the write: ${parts}`);
+      }
       process.exit(1);
     }
     inserted += batch.length;
