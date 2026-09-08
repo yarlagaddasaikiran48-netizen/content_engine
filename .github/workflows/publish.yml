@@ -45,7 +45,7 @@ jobs:
             exit 1
           fi
           missing=""
-          for name in NEXT_PUBLIC_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY PUBLISH_CALLBACK_SECRET; do
+          for name in NEXT_PUBLIC_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
             if [ -z "${!name}" ]; then missing="$missing $name"; fi
           done
           if [ -n "$missing" ]; then
@@ -53,7 +53,12 @@ jobs:
                  "Settings → Secrets and variables → Actions, then press Post again."
             exit 1
           fi
-          echo "Publishing $VIDEO_ID; all required secrets are present."
+          # Not fatal — the script falls back to writing the result directly.
+          if [ -z "$PUBLISH_CALLBACK_SECRET" ]; then
+            echo "::warning::PUBLISH_CALLBACK_SECRET is not set, so this run cannot report" \
+                 "progress back to the dashboard. Publishing will still work."
+          fi
+          echo "Publishing $VIDEO_ID; the required secrets are present."
 
       - name: Check out the repository
         uses: actions/checkout@v4

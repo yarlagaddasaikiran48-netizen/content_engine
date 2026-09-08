@@ -40,7 +40,7 @@ jobs:
             exit 1
           fi
           missing=""
-          for name in NEXT_PUBLIC_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY PUBLISH_CALLBACK_SECRET; do
+          for name in NEXT_PUBLIC_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
             if [ -z "${!name}" ]; then missing="$missing $name"; fi
           done
           if [ -n "$missing" ]; then
@@ -48,7 +48,14 @@ jobs:
                  "Settings → Secrets and variables → Actions, then approve the video again."
             exit 1
           fi
-          echo "Rendering $VIDEO_ID; all required secrets are present."
+          # Not fatal: the script reports progress by callback when this is set
+          # and writes to the database directly when it is not. Worth saying out
+          # loud, though, since without it the dashboard only updates at the end.
+          if [ -z "$PUBLISH_CALLBACK_SECRET" ]; then
+            echo "::warning::PUBLISH_CALLBACK_SECRET is not set, so this run cannot report" \
+                 "progress back to the dashboard. Rendering will still work."
+          fi
+          echo "Rendering $VIDEO_ID; the required secrets are present."
 
       - name: Check out the repository
         uses: actions/checkout@v4
