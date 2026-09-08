@@ -121,7 +121,16 @@ jobs:
           YOUTUBE_PRIVACY_STATUS: ${{ vars.YOUTUBE_PRIVACY_STATUS || 'public' }}
           YOUTUBE_CATEGORY_ID: ${{ vars.YOUTUBE_CATEGORY_ID || '22' }}
           PUBLISH_CALLBACK_SECRET: ${{ secrets.PUBLISH_CALLBACK_SECRET }}
-        run: npx tsx scripts/render-and-publish.ts --id="$VIDEO_ID"
+        # Same reason as the seeder: job logs need admin rights on this
+        # repository, annotations do not. Without this a crash inside the render
+        # reaches anyone watching as "Process completed with exit code 1" and
+        # nothing else, which is two runs spent learning nothing.
+        run: |
+          set -o pipefail
+          if ! npx tsx scripts/render-and-publish.ts --id="$VIDEO_ID" 2>&1 | tee /tmp/render.log; then
+            echo "::error::render failed: $(tail -c 900 /tmp/render.log | tr -s '[:space:]' ' ')"
+            exit 1
+          fi
 
       # Approval sets the row to "rendering" and the render script is what
       # normally moves it off that. Anything that dies before the script starts
