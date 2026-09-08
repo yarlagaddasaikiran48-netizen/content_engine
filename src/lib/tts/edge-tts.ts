@@ -86,7 +86,15 @@ export interface SynthesisResult {
   durationSeconds: number;
   voice: string;
   bytes: number;
+  /**
+   * What is actually in `audio`. Present because a second provider returns WAV,
+   * and the object path, the storage content type and the renderer's temporary
+   * filename all used to assume MP3 in three separate places.
+   */
+  format: AudioFormat;
 }
+
+export type AudioFormat = "mp3" | "wav";
 
 export class EdgeTTSError extends Error {
   constructor(
@@ -380,6 +388,7 @@ export async function synthesize(
     durationSeconds: Number(((audio.length * 8) / MP3_BITRATE_BPS).toFixed(2)),
     voice: opts.voice,
     bytes: audio.length,
+    format: "mp3",
   };
 }
 

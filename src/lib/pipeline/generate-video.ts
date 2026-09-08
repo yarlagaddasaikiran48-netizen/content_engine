@@ -24,7 +24,7 @@ import { buildHookContext } from "@/lib/sources/hook";
 import { fetchGitaVerse } from "@/lib/sources/gita";
 import { rotationFrom } from "@/lib/sources/mahapuranas";
 import { deleteAudio, supabaseAdmin, uploadAudio } from "@/lib/supabase/admin";
-import { synthesize } from "@/lib/tts/edge-tts";
+import { contentTypeFor, extensionFor, speak } from "@/lib/tts";
 import { validateScript } from "@/lib/safety/validate";
 import type { SpiritualVideo, Topic } from "@/lib/types";
 
@@ -293,12 +293,7 @@ export async function generateVideo(): Promise<GenerationOutcome> {
       }
 
       // ---- 5. voice ----
-      const speech = await synthesize(script.script_body, {
-        voice: config.ttsVoice,
-        rate: config.ttsRate,
-        pitch: config.ttsPitch,
-        volume: config.ttsVolume,
-      });
+      const speech = await speak(script.script_body, config, { log });
       log.push(
         `  voiced: ${speech.durationSeconds}s, ${(speech.bytes / 1024).toFixed(0)} KB, ${speech.voice}`,
       );
@@ -342,8 +337,8 @@ export async function generateVideo(): Promise<GenerationOutcome> {
       }
 
       // ---- 6. store the audio ----
-      const objectPath = `${new Date().toISOString().slice(0, 10)}/${Date.now()}-${slugify(script.title)}.mp3`;
-      const { path, publicUrl } = await uploadAudio(objectPath, speech.audio);
+      const objectPath = `${new Date().toISOString().slice(0, 10)}/${Date.now()}-${slugify(script.title)}.${extensionFor(speech)}`;
+      const { path, publicUrl } = await uploadAudio(objectPath, speech.audio, contentTypeFor(speech));
 
       // ---- 7. queue it ----
       const { data: inserted, error: insertError } = await supabaseAdmin()

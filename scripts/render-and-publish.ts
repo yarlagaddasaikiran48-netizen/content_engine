@@ -8,7 +8,7 @@
  * identically on your own machine for debugging.
  *
  * Pipeline:
- *   fetch the row  ->  download the MP3  ->  build word-timed captions
+ *   fetch the row  ->  download the narration  ->  build word-timed captions
  *   ->  FFmpeg composite  ->  YouTube resumable upload  ->  report back
  *
  * Backgrounds: drop any .jpg/.png files into assets/backgrounds/ and one is
@@ -174,6 +174,28 @@ function escapeDrawText(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "");
 }
 
+/**
+ * The container the stored narration is actually in.
+ *
+ * Edge TTS produces MP3 and Gemini TTS produces WAV, and rows of both kinds
+ * exist at once for as long as the queue holds anything generated before the
+ * switch. FFmpeg reads either quite happily, but it trusts the extension, so
+ * writing WAV bytes to a file named .mp3 is how you get a demuxer error that
+ * blames the audio rather than the name.
+ */
+function audioExtension(url: string): string {
+  let path = url;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    // Not an absolute URL. Fall through and read the string as given rather
+    // than throwing: a malformed audio_url should fail at the download, with
+    // the HTTP status attached, not here with a URL parser error.
+  }
+  const ext = /\.([a-z0-9]{2,4})(?:\?|#|$)/i.exec(path)?.[1]?.toLowerCase();
+  return ext === "wav" || ext === "m4a" || ext === "ogg" ? ext : "mp3";
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -271,7 +293,11 @@ async function main(): Promise<void> {
     rmSync(TMP_DIR, { recursive: true, force: true });
     mkdirSync(TMP_DIR, { recursive: true });
 
-    const audioPath = join(TMP_DIR, "narration.mp3");
+    // Follow the stored object rather than assume MP3. Gemini narration is
+    // WAV, Edge narration is MP3, and rows of both kinds outlive the switch.
+    // FFmpeg reads either, but only if the extension does not lie about which.
+    const audioFile = `narration.${audioExtension(video.audio_url)}`;
+    const audioPath = join(TMP_DIR, audioFile);
     const srtPath = join(TMP_DIR, "captions.srt");
     const outputPath = join(TMP_DIR, "short.mp4");
 
@@ -323,7 +349,7 @@ async function main(): Promise<void> {
       args.push(
         "-loop", "1",
         "-i", background,
-        "-i", "narration.mp3",
+        "-i", audioFile,
         "-filter_complex",
         `[0:v]scale=${WIDTH * 1.2}:${HEIGHT * 1.2}:force_original_aspect_ratio=increase,` +
           `crop=${WIDTH * 1.2}:${HEIGHT * 1.2},` +
@@ -340,7 +366,7 @@ async function main(): Promise<void> {
         "-i",
         `gradients=size=${WIDTH}x${HEIGHT}:c0=0x140a24:c1=0x3d1b3a:c2=0x6d2f26:c3=0x1b1030:` +
           `n=4:type=radial:speed=0.012:rate=${FPS}:duration=${duration}`,
-        "-i", "narration.mp3",
+        "-i", audioFile,
         "-filter_complex", `[0:v]${commonFilters}[v]`,
       );
     }

@@ -23,13 +23,14 @@ export function supabaseAdmin(): SupabaseClient {
 export async function uploadAudio(
   objectPath: string,
   audio: Buffer,
+  contentType = "audio/mpeg",
 ): Promise<{ path: string; publicUrl: string }> {
   const supabase = supabaseAdmin();
 
   const { error } = await supabase.storage
     .from(config.audioBucket)
     .upload(objectPath, audio, {
-      contentType: "audio/mpeg",
+      contentType,
       cacheControl: "31536000",
       upsert: true,
     });

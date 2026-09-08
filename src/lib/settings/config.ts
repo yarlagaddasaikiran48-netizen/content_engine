@@ -36,7 +36,10 @@ export interface AppConfig {
   scriptsPerDay: number;
   targetSeconds: number;
   wordCountTolerance: number;
+  ttsProvider: string;
   ttsVoice: string;
+  ttsGeminiVoice: string;
+  ttsStylePrompt: string;
   ttsRate: string;
   ttsPitch: string;
   ttsVolume: string;
@@ -136,7 +139,10 @@ export async function loadConfig(): Promise<AppConfig> {
     scriptsPerDay: asNumber(rows, "scripts_per_day"),
     targetSeconds: asNumber(rows, "target_seconds"),
     wordCountTolerance: asNumber(rows, "word_count_tolerance"),
+    ttsProvider: resolve(rows, "tts_provider"),
     ttsVoice: resolve(rows, "tts_voice"),
+    ttsGeminiVoice: resolve(rows, "tts_gemini_voice"),
+    ttsStylePrompt: resolve(rows, "tts_style_prompt"),
     ttsRate: resolve(rows, "tts_rate"),
     ttsPitch: resolve(rows, "tts_pitch"),
     ttsVolume: resolve(rows, "tts_volume"),
