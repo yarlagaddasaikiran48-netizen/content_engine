@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { MaskedSetting } from "@/lib/settings/store";
+import { readJson } from "@/lib/http";
 
 const GROUPS = [
   { id: "connections", title: "Connections", blurb: "Keys, and the YouTube account." },
@@ -70,7 +71,7 @@ export function SettingsClient({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ updates: edits }),
       });
-      const body = await response.json();
+      const body = await readJson(response);
       if (!response.ok || !body.ok) throw new Error(body.error ?? "Save failed.");
 
       // Re-read rather than patching local state: the server is the authority
@@ -96,7 +97,7 @@ export function SettingsClient({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ target }),
       });
-      const body = await response.json();
+      const body = await readJson(response);
       setProbes((p) => ({
         ...p,
         [target]: {

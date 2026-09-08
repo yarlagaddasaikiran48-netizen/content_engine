@@ -14,6 +14,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+/** Left for writing the log out after the last phase. See /api/generate. */
+const TICK_RESPONSE_RESERVE_MS = 8_000;
+
 /**
  * GET /api/cron/tick — the heartbeat, called every five minutes by pg_cron.
  *
@@ -58,13 +61,19 @@ export async function GET(request: Request) {
 
   const log: string[] = [];
 
+  // The tick shares one sixty-second budget across five phases, and generation
+  // is the last and by far the longest. It is given whatever is genuinely left
+  // rather than a fixed slice, so a slow render phase shortens generation
+  // instead of pushing the whole run past the platform's limit.
+  const startedAt = Date.now();
+
   try {
     await expire(log, cfg.rejectTtlHours);
     await reapStalledRenders(log);
     await renderAhead(log, cfg);
     await publishDueSlot(log, cfg);
     await refreshPerformance(log);
-    await topUpBatch(log, cfg);
+    await topUpBatch(log, cfg, startedAt + (maxDuration * 1_000 - TICK_RESPONSE_RESERVE_MS));
     return ok({ log });
   } catch (error) {
     return fail(messageOf(error), 500, { log });
@@ -371,6 +380,7 @@ async function refreshPerformance(log: string[]): Promise<void> {
 async function topUpBatch(
   log: string[],
   cfg: Awaited<ReturnType<typeof loadConfig>>,
+  deadline: number,
 ): Promise<void> {
   const supabase = supabaseAdmin();
   const today = zonedDateKey(new Date(), cfg.postingTimezone);
@@ -410,7 +420,7 @@ async function topUpBatch(
   }
   log.push(`generate: ${free.length}/${targets.length} model/key combinations still have quota`);
 
-  const result = await generateVideo();
+  const result = await generateVideo({ deadline });
   log.push(
     result.ok
       ? `generate: ${madeToday + 1}/${cfg.scriptsPerDay} — "${result.video?.title}"`

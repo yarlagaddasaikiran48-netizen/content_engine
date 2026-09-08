@@ -36,6 +36,43 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { validateScript } from "@/lib/safety/validate";
 import type { SpiritualVideo, Topic } from "@/lib/types";
 
+/**
+ * The shortest run worth starting.
+ *
+ * An attempt is one Gemini call for a full script plus four database round
+ * trips. Nothing useful has ever finished inside twelve seconds, so if less
+ * than that remains there is no point beginning one -- the only outcome is the
+ * platform killing the function mid-call.
+ */
+const MIN_ATTEMPT_BUDGET_MS = 12_000;
+
+/**
+ * How long generation may take when nobody says otherwise.
+ *
+ * Both callers do say otherwise; this exists so a future third caller cannot
+ * accidentally reintroduce an unbounded run.
+ */
+const DEFAULT_BUDGET_MS = 45_000;
+
+export interface GenerateOptions {
+  /**
+   * Epoch milliseconds after which no NEW attempt may start.
+   *
+   * This is the difference between a failure the operator can read and one
+   * they cannot. Vercel gives the function sixty seconds and then kills it,
+   * and a killed function returns the platform's own plain-text error page --
+   * so the browser, which is expecting JSON, reports "Unexpected token 'A'"
+   * and the entire log of what actually went wrong is discarded. Stopping
+   * ourselves a little early turns that into a real answer with the trail
+   * still attached.
+   *
+   * An in-flight attempt is never interrupted: the Gemini SDK gives us nothing
+   * to abort, and a half-written script is worse than a slow one. The deadline
+   * governs whether the NEXT attempt begins.
+   */
+  deadline?: number;
+}
+
 export interface GenerationOutcome {
   ok: boolean;
   video?: SpiritualVideo;
@@ -120,6 +157,7 @@ async function claimTopic(
   exclude: string[],
   log: string[],
   config: AppConfig,
+  exhausted: Set<string>,
 ): Promise<Topic | null> {
   if (config.puranaRotation) {
     const rotation = rotationFrom(new Date(), {
@@ -128,7 +166,15 @@ async function claimTopic(
     });
 
     for (const [offset, purana] of rotation.entries()) {
+      // A Purana with nothing unused left is still empty on the next attempt,
+      // and asking again costs another round trip to the database. Walking
+      // eighteen of them four times over is up to seventy-two sequential
+      // queries inside a sixty-second function, all of them to re-learn what
+      // the first attempt already established.
+      if (exhausted.has(purana.name)) continue;
+
       const topic = await claimTopicFromScripture(purana.name, exclude);
+      if (!topic) exhausted.add(purana.name);
       if (topic) {
         log.push(
           offset === 0
@@ -229,11 +275,16 @@ async function similarityAgainstHistory(body: string): Promise<number> {
   return typeof data === "number" ? data : 0;
 }
 
-export async function generateVideo(): Promise<GenerationOutcome> {
+export async function generateVideo(
+  options: GenerateOptions = {},
+): Promise<GenerationOutcome> {
+  const deadline = options.deadline ?? Date.now() + DEFAULT_BUDGET_MS;
   const config = await loadConfig();
   const log: string[] = [];
   const triedTopics: string[] = [];
   const rejectedAngles: string[] = [];
+  /** Puranas found empty during this run, so later attempts do not re-ask. */
+  const exhaustedPuranas = new Set<string>();
 
   const hook = await buildHookContext();
   log.push(`Context: ${hook.occasion}`);
@@ -242,11 +293,37 @@ export async function generateVideo(): Promise<GenerationOutcome> {
   const recentTitles = await fetchRecentTitles();
   const learningBrief = await loadLearningBrief(config, log);
 
+  // What the slowest completed attempt cost, used to predict the next one.
+  // Measured rather than assumed: a 20-second script on a fast model and a
+  // 90-second one on a slow model are not the same bet.
+  let slowestAttemptMs = 0;
+
   for (let attempt = 1; attempt <= config.maxGenerationAttempts; attempt += 1) {
+    const remaining = deadline - Date.now();
+    const needed = Math.max(MIN_ATTEMPT_BUDGET_MS, slowestAttemptMs);
+
+    if (attempt > 1 && remaining < needed) {
+      log.push(
+        `Stopped after ${attempt - 1} attempt(s): ${Math.round(remaining / 1000)}s left, ` +
+          `and the last attempt took ${Math.round(slowestAttemptMs / 1000)}s.`,
+      );
+      await recordAttempt(null, attempt - 1, "error", "out of time before the next attempt");
+      return {
+        ok: false,
+        attempts: attempt - 1,
+        log,
+        error:
+          `Ran out of time after ${attempt - 1} attempt(s). Every script written so far was ` +
+          `rejected — the log above says why. Press Generate again to continue from where ` +
+          `this left off, or lower "Generation attempts before giving up" in Settings.`,
+      };
+    }
+
+    const attemptStartedAt = Date.now();
     let topic: Topic | null = null;
 
     try {
-      topic = await claimTopic(triedTopics, log, config);
+      topic = await claimTopic(triedTopics, log, config, exhaustedPuranas);
       if (!topic) {
         log.push("No unused topics remain in the ledger.");
         await recordAttempt(null, attempt, "no_topics", "topic_ledger exhausted");
@@ -449,6 +526,11 @@ export async function generateVideo(): Promise<GenerationOutcome> {
       if (isFatalGenerationError(message)) {
         return { ok: false, attempts: attempt, log, error: message };
       }
+    } finally {
+      // Runs on every exit from the attempt -- success, rejection, throw --
+      // so the estimate is built from what attempts actually cost rather than
+      // only from the ones that failed in a particular way.
+      slowestAttemptMs = Math.max(slowestAttemptMs, Date.now() - attemptStartedAt);
     }
   }
 

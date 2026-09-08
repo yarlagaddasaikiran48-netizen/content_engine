@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { VideoCard } from "@/components/VideoCard";
 import type { QueueStats, SpiritualVideo } from "@/lib/types";
+import { readJson } from "@/lib/http";
 
 type Filter = "pending" | "published" | "all" | "archive";
 
@@ -59,7 +60,7 @@ export function QueueClient({ initialVideos, initialStats }: Props) {
         const response = await fetch(`/api/videos?status=${definition.statuses}`, {
           cache: "no-store",
         });
-        const payload = await response.json();
+        const payload = await readJson(response);
         if (!payload.ok) throw new Error(payload.error ?? "Could not load the queue.");
         setVideos(payload.videos as SpiritualVideo[]);
         setStats((payload.stats as QueueStats | null) ?? null);
@@ -98,7 +99,7 @@ export function QueueClient({ initialVideos, initialStats }: Props) {
     notify("Writing a new script… this takes about 20 seconds.", "info");
     try {
       const response = await fetch("/api/generate", { method: "POST" });
-      const payload = await response.json();
+      const payload = await readJson(response);
       if (!payload.ok) {
         // The generator's own message ends with "see the log above", and the
         // log is right here in the payload — so show it. A toast that clears
@@ -131,7 +132,7 @@ export function QueueClient({ initialVideos, initialStats }: Props) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: video.id }),
         });
-        const payload = await response.json();
+        const payload = await readJson(response);
         if (!payload.ok) throw new Error(payload.error ?? "Approval failed.");
         notify(payload.message ?? "Approved and sent to the renderer.", "success");
         await load(filter, false);
@@ -155,7 +156,7 @@ export function QueueClient({ initialVideos, initialStats }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: video.id, reason: rejectReason.trim() || undefined }),
       });
-      const payload = await response.json();
+      const payload = await readJson(response);
       if (!payload.ok) throw new Error(payload.error ?? "Rejection failed.");
       notify("Rejected. It will not come back.", "info");
       setRejectReason("");

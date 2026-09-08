@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { QueueData } from "@/lib/schedule/queue";
+import { readJson } from "@/lib/http";
 
 /**
  * The publish line.
@@ -17,7 +18,7 @@ export function PublishQueue({ initial, loadError }: { initial: QueueData; loadE
   const [note, setNote] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
 
   async function refresh() {
-    const body = await fetch("/api/queue", { cache: "no-store" }).then((r) => r.json());
+    const body = await fetch("/api/queue", { cache: "no-store" }).then(readJson);
     if (body.ok) {
       setData({
         ready: body.ready,
@@ -49,7 +50,7 @@ export function PublishQueue({ initial, loadError }: { initial: QueueData; loadE
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ order: next.map((e) => e.video.id) }),
       });
-      const body = await response.json();
+      const body = await readJson(response);
       if (!response.ok || !body.ok) throw new Error(body.error ?? "Reorder failed.");
       await refresh();
     } catch (error) {
@@ -68,7 +69,7 @@ export function PublishQueue({ initial, loadError }: { initial: QueueData; loadE
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id, action: "unqueue" }),
       });
-      const body = await response.json();
+      const body = await readJson(response);
       if (!response.ok || !body.ok) throw new Error(body.error ?? "Could not unqueue.");
       setNote({ tone: "ok", text: "Sent back to the review deck." });
       await refresh();
@@ -87,7 +88,7 @@ export function PublishQueue({ initial, loadError }: { initial: QueueData; loadE
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id }),
       });
-      const body = await response.json();
+      const body = await readJson(response);
       if (!response.ok || !body.ok) throw new Error(body.error ?? "Could not post.");
       setNote({ tone: "ok", text: body.message ?? "Uploading to YouTube." });
       await refresh();
@@ -106,7 +107,7 @@ export function PublishQueue({ initial, loadError }: { initial: QueueData; loadE
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id, reason: "Discarded after watching the render." }),
       });
-      const body = await response.json();
+      const body = await readJson(response);
       if (!response.ok || !body.ok) throw new Error(body.error ?? "Could not discard.");
       setNote({ tone: "ok", text: "Discarded. It will not be posted." });
       await refresh();
@@ -125,7 +126,7 @@ export function PublishQueue({ initial, loadError }: { initial: QueueData; loadE
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id }),
       });
-      const body = await response.json();
+      const body = await readJson(response);
       if (!response.ok || !body.ok) throw new Error(body.error ?? "Retry failed.");
       setNote({ tone: "ok", text: body.message ?? "Retrying." });
       await refresh();

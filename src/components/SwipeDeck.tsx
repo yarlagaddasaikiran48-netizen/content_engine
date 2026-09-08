@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SpiritualVideo } from "@/lib/types";
+import { readJson } from "@/lib/http";
 
 /** Fraction of viewport width a drag must cross to count as a decision. */
 const COMMIT_FRACTION = 0.28;
@@ -78,7 +79,7 @@ export function SwipeDeck({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ id: card.id }),
         });
-        const body = await response.json();
+        const body = await readJson(response);
         if (!response.ok || !body.ok) throw new Error(body.error ?? "Request failed.");
 
         if (decision === "approve") {
@@ -103,10 +104,10 @@ export function SwipeDeck({
     setNote({ tone: "ok", text: "Writing a new script… this takes about 30 seconds." });
     try {
       const response = await fetch("/api/generate", { method: "POST" });
-      const body = await response.json();
+      const body = await readJson(response);
       if (!response.ok || !body.ok) throw new Error(body.error ?? "Generation failed.");
 
-      const refreshed = await fetch("/api/deck", { cache: "no-store" }).then((r) => r.json());
+      const refreshed = await fetch("/api/deck", { cache: "no-store" }).then(readJson);
       if (refreshed.ok) {
         setVideos(refreshed.videos);
         setMeta({

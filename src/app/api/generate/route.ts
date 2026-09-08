@@ -16,9 +16,22 @@ export const dynamic = "force-dynamic";
  */
 export const maxDuration = 60;
 
+/**
+ * How much of the sixty seconds is left for answering.
+ *
+ * Ten seconds is generous for serialising a JSON body, and that is the point:
+ * overrunning does not produce a slow answer, it produces no answer at all.
+ * Vercel kills the function and returns its own plain-text page, the browser
+ * calls response.json() on "An error occurred with your deployment", and the
+ * operator sees "Unexpected token 'A'" with the entire log thrown away.
+ */
+const RESPONSE_RESERVE_MS = 10_000;
+
 export async function POST() {
+  const deadline = Date.now() + (maxDuration * 1_000 - RESPONSE_RESERVE_MS);
+
   try {
-    const result = await generateVideo();
+    const result = await generateVideo({ deadline });
 
     if (!result.ok) {
       return fail(result.error ?? "Generation failed.", 422, {

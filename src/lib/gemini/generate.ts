@@ -17,13 +17,29 @@ import {
 } from "@google/genai";
 
 import { buildPrompt, systemInstruction, type PromptInput } from "@/lib/gemini/prompt";
+import { wordWindow, type AppConfig } from "@/lib/settings/config";
 import { withGeminiTarget } from "@/lib/gemini/rotate";
 import type { GeminiTarget } from "@/lib/pipeline/cooldown";
 import { isQuotaError } from "@/lib/pipeline/fatal";
 import { normaliseTone } from "@/lib/tts/voice";
 import type { GeneratedScript } from "@/lib/types";
 
-const RESPONSE_SCHEMA = {
+/**
+ * The response contract, computed from the configured length.
+ *
+ * It used to be a constant, and its word range was written out as "62-96
+ * words". Nothing keeps a hardcoded range honest: the real window is
+ * `wordWindow(cfg)`, it moves with the target length and the tolerance, and at
+ * the shipped defaults it is 68-92. So the schema was telling the model that
+ * ninety-four words was acceptable while the validator threw ninety-four words
+ * away -- a contradiction the model cannot see, paid for with a whole
+ * generation and another spent topic every time it landed in the gap.
+ *
+ * The prompt, the validator and this schema now read the same function.
+ */
+export function responseSchema(cfg: AppConfig) {
+  const { min, max } = wordWindow(cfg);
+  return {
   type: Type.OBJECT,
   properties: {
     title: {
@@ -33,7 +49,8 @@ const RESPONSE_SCHEMA = {
     script_body: {
       type: Type.STRING,
       description:
-        "The narration spoken aloud, 62-96 words, plain text only, no stage directions.",
+        `The narration spoken aloud, ${min}-${max} words, plain text only, no stage directions. ` +
+        "Outside that range it is rejected automatically.",
     },
     seo_description: {
       type: Type.STRING,
@@ -75,7 +92,8 @@ const RESPONSE_SCHEMA = {
     "scene_prompt",
     "tone",
   ],
-};
+  };
+}
 
 /** Block anything the provider considers even low-probability harmful. */
 const SAFETY_SETTINGS = [
@@ -182,7 +200,7 @@ async function generateWithTarget(
         config: {
           systemInstruction: systemInstruction(config),
           responseMimeType: "application/json",
-          responseSchema: RESPONSE_SCHEMA,
+          responseSchema: responseSchema(config),
           safetySettings: SAFETY_SETTINGS,
           // High enough for genuinely different phrasing between videos,
           // low enough to keep the model obedient to the word count.

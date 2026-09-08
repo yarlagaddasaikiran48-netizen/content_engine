@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { LearningBrief } from "@/lib/learning/insights";
 import type { PerformanceRow } from "@/app/api/performance/route";
+import { readJson } from "@/lib/http";
 
 /**
  * The Performance page.
@@ -97,7 +98,7 @@ export function PerformanceClient({
   async function reload() {
     setRefreshing(true);
     try {
-      const body = await fetch("/api/performance", { cache: "no-store" }).then((r) => r.json());
+      const body = await fetch("/api/performance", { cache: "no-store" }).then(readJson);
       if (!body.ok) throw new Error(body.error ?? "Could not load performance.");
       setData(body as PerformanceData);
       setError(null);
