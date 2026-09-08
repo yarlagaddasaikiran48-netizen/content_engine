@@ -17,6 +17,7 @@ import {
 } from "@google/genai";
 
 import { buildPrompt, systemInstruction, type PromptInput } from "@/lib/gemini/prompt";
+import { isQuotaError } from "@/lib/pipeline/fatal";
 import type { GeneratedScript } from "@/lib/types";
 
 const RESPONSE_SCHEMA = {
@@ -162,9 +163,15 @@ export async function generateScript(input: PromptInput): Promise<GeneratedScrip
       lastError = error;
 
       const message = error instanceof Error ? error.message : String(error);
+
+      // A spent quota is not a transient error, whatever its status code says.
+      // Retrying it 800ms later spends one more request from the budget that
+      // just ran out, and the answer cannot change until the window rolls
+      // over — tens of seconds away at best. Leave immediately and let the
+      // caller decide how long to stand down.
+      if (isQuotaError(message)) break;
+
       const transient =
-        message.includes("429") ||
-        message.includes("RESOURCE_EXHAUSTED") ||
         message.includes("500") ||
         message.includes("503") ||
         message.includes("UNAVAILABLE") ||

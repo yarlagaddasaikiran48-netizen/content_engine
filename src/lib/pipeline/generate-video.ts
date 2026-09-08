@@ -18,7 +18,8 @@
 
 import { loadConfig, wordWindow, type AppConfig } from "@/lib/settings/config";
 import { contentHash } from "@/lib/dedupe/hash";
-import { isFatalGenerationError } from "@/lib/pipeline/fatal";
+import { describeCooldown, startQuotaCooldown } from "@/lib/pipeline/cooldown";
+import { isFatalGenerationError, isQuotaError, quotaRetrySeconds } from "@/lib/pipeline/fatal";
 import { generateScript } from "@/lib/gemini/generate";
 import { buildHookContext } from "@/lib/sources/hook";
 import { fetchGitaVerse } from "@/lib/sources/gita";
@@ -401,6 +402,25 @@ export async function generateVideo(): Promise<GenerationOutcome> {
       log.push(`  error: ${message}`);
       await recordAttempt(topic?.topic_key ?? null, attempt, "error", message);
       if (topic) await releaseTopic(topic.topic_key);
+
+      // A spent quota stands the whole engine down. Remembering the refusal
+      // is the point: without it the five-minute tick asks again, and again,
+      // and the budget never gets the chance to roll over.
+      if (isQuotaError(message)) {
+        const wait = quotaRetrySeconds(message);
+        await startQuotaCooldown(wait);
+        const readable = describeCooldown(wait);
+        log.push(`  Gemini quota is spent. Standing down for ${readable}.`);
+        return {
+          ok: false,
+          attempts: attempt,
+          log,
+          error:
+            `Gemini refused: the API quota is used up. Nothing is wrong with the ` +
+            `scripts — none was written. Waiting ${readable} before trying again. ` +
+            `Raise the limit in Google AI Studio, or lower "scripts per day".`,
+        };
+      }
 
       // Configuration, credential and dead-model failures will not fix
       // themselves on retry — stop rather than spend three more topics and

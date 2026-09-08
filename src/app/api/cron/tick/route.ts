@@ -1,5 +1,6 @@
 import { fail, messageOf, ok } from "@/lib/api";
 import { dispatchRender } from "@/lib/github/dispatch";
+import { describeCooldown, quotaCooldownRemaining } from "@/lib/pipeline/cooldown";
 import { generateVideo } from "@/lib/pipeline/generate-video";
 import { dueSlot, orderedSlots, slotMinutes, zonedDateKey, zonedParts } from "@/lib/schedule/slots";
 import { loadConfig } from "@/lib/settings/config";
@@ -260,6 +261,16 @@ async function topUpBatch(
   const madeToday = count ?? 0;
   if (madeToday >= cfg.scriptsPerDay) {
     log.push(`generate: ${madeToday}/${cfg.scriptsPerDay} already written today`);
+    return;
+  }
+
+  // A failed generation writes no row, so madeToday never moves and this
+  // branch is reached again in five minutes. That is the right behaviour for
+  // a script that came out badly and the wrong one for a spent quota, where
+  // every retry is refused and counted. Honour the stand-down.
+  const cooling = await quotaCooldownRemaining();
+  if (cooling > 0) {
+    log.push(`generate: Gemini quota spent, waiting ${describeCooldown(cooling)}`);
     return;
   }
 
