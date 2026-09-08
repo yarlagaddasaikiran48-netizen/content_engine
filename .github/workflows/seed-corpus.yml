@@ -1,0 +1,79 @@
+name: Seed the topic corpus
+
+# Reads the published Purana translations and writes every canto into
+# topic_ledger, so the pool is limited by what the books contain rather than by
+# what somebody typed into a file.
+#
+# Run from the Actions tab — including from a phone, which is the point. This
+# is a long job that makes a couple of thousand requests to somebody else's
+# server, so it is never automatic and never on a schedule.
+on:
+  workflow_dispatch:
+    inputs:
+      chapters:
+        description: "Read the Purana chapters (off = curated topics and Gita only)"
+        required: true
+        type: boolean
+        default: true
+      puranas:
+        description: "Comma-separated keys to limit to, e.g. linga,markandeya. Blank = all eighteen."
+        required: false
+        type: string
+        default: ""
+      per_purana:
+        description: "Most chapters to take from each Purana"
+        required: true
+        type: string
+        default: "500"
+
+concurrency:
+  group: seed-corpus
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    # Padma alone has close to seven hundred chapters, fetched one at a time.
+    timeout-minutes: 300
+
+    steps:
+      - name: Check the required secrets are set
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          missing=""
+          for name in NEXT_PUBLIC_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing — add them under" \
+                 "Settings → Secrets and variables → Actions, then run this again."
+            exit 1
+          fi
+          echo "Seeding; the required secrets are present."
+
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Read the books and write the ledger
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SETTINGS_MASTER_KEY: ${{ secrets.SETTINGS_MASTER_KEY }}
+        run: |
+          args=""
+          if [ "${{ inputs.chapters }}" = "true" ]; then args="$args --chapters=true"; fi
+          if [ -n "${{ inputs.puranas }}" ]; then args="$args --puranas=${{ inputs.puranas }}"; fi
+          args="$args --per-purana=${{ inputs.per_purana }}"
+          echo "npx tsx scripts/seed-topics.ts$args"
+          npx tsx scripts/seed-topics.ts $args

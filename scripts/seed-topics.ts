@@ -21,7 +21,10 @@ import {
   fetchGitaVerse,
   type GitaChapter,
 } from "../src/lib/sources/gita";
+import { citationUrlFor, MAHA_PURANAS } from "../src/lib/sources/mahapuranas";
+import { buildChapterRow, isUsableChapter } from "../src/lib/sources/purana-chapters";
 import { assertUniqueKeys, CORPUS } from "../src/lib/sources/puranas";
+import { fetchChapter, fetchChapterIndex } from "../src/lib/sources/wisdomlib";
 
 interface LedgerRow {
   topic_key: string;
@@ -153,6 +156,74 @@ function buildCorpusRows(): LedgerRow[] {
   }));
 }
 
+function flag(name: string): string | undefined {
+  const prefix = `--${name}=`;
+  const match = process.argv.find((value) => value.startsWith(prefix));
+  return match ? match.slice(prefix.length) : process.env[name.toUpperCase().replace(/-/g, "_")];
+}
+
+/**
+ * Every canto of every Purana that has an open translation.
+ *
+ * This is the part that used to be a hand-written array. Reading the books
+ * themselves gives roughly two and a half thousand chapters instead of the two
+ * hundred a person can reasonably type, and each one carries a deep citation to
+ * the exact chapter plus the translated text the writer works from.
+ *
+ * Six of the eighteen have no open full text and are skipped here; the curated
+ * entries cover those.
+ *
+ * Requests are made one at a time, on purpose. This is a one-off seed against
+ * somebody else's server, and finishing twenty minutes sooner is not worth
+ * being rate-limited halfway through.
+ */
+async function buildChapterRows(
+  only: string[] | null,
+  perPurana: number,
+): Promise<LedgerRow[]> {
+  const rows: LedgerRow[] = [];
+
+  for (const purana of MAHA_PURANAS) {
+    if (only && !only.includes(purana.key)) continue;
+
+    let links;
+    try {
+      links = await fetchChapterIndex(citationUrlFor(purana));
+    } catch (error) {
+      console.log(`  ${purana.name}: index unreachable (${(error as Error).message})`);
+      continue;
+    }
+
+    if (links.length === 0) {
+      console.log(`  ${purana.name}: no open full text here, curated entries cover it.`);
+      continue;
+    }
+
+    const wanted = links.slice(0, perPurana);
+    let kept = 0;
+    let skipped = 0;
+
+    for (const link of wanted) {
+      try {
+        const chapter = await fetchChapter(link.url);
+        if (!isUsableChapter(chapter.text)) {
+          skipped += 1;
+          continue;
+        }
+        rows.push(buildChapterRow(purana, link, chapter));
+        kept += 1;
+      } catch {
+        skipped += 1;
+      }
+    }
+
+    const note = skipped > 0 ? ` (${skipped} skipped)` : "";
+    console.log(`  ${purana.name}: ${kept} of ${links.length} chapters${note}`);
+  }
+
+  return rows;
+}
+
 async function main(): Promise<void> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -181,7 +252,20 @@ async function main(): Promise<void> {
   const corpusRows = buildCorpusRows();
   console.log(`  ${corpusRows.length} curated topics ready.\n`);
 
-  const all = [...gitaRows, ...corpusRows];
+  // Off by default: it makes a couple of thousand requests to wisdomlib, which
+  // is not something a routine re-seed should do without being asked.
+  let chapterRows: LedgerRow[] = [];
+  if (flag("chapters") !== undefined && flag("chapters") !== "false") {
+    const only = flag("puranas")?.split(",").map((k) => k.trim()).filter(Boolean) ?? null;
+    const perPurana = Number(flag("per-purana") ?? 500);
+
+    console.log("→ Purana chapters, read from the published translations");
+    if (only) console.log(`  limited to: ${only.join(", ")}`);
+    chapterRows = await buildChapterRows(only, perPurana);
+    console.log(`  ${chapterRows.length} chapters ready.\n`);
+  }
+
+  const all = [...gitaRows, ...corpusRows, ...chapterRows];
 
   console.log(`→ Writing ${all.length} topics to Supabase…`);
   let inserted = 0;
