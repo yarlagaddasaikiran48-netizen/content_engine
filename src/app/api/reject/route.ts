@@ -25,7 +25,7 @@ export async function POST(request: Request) {
 
     const { data: video } = await supabase
       .from("spiritual_videos")
-      .select("id, status, audio_path")
+      .select("id, status, audio_path, topic_key")
       .eq("id", body.id)
       .maybeSingle();
 
@@ -40,9 +40,11 @@ export async function POST(request: Request) {
         status: "rejected",
         rejected_at: new Date().toISOString(),
         rejection_reason: body.reason?.slice(0, 500) ?? null,
-        // A reject is a deferral, not a deletion. The card keeps cycling
-        // through the deck until this moment, then the scheduler removes it
-        // and hands its scripture verse back to the pool.
+        // Not a deferral -- the card is gone from the deck the moment this
+        // write lands. This timestamp is only when the ROW is deleted, and it
+        // is deliberately later than the reject: the body stays in the
+        // similarity corpus in the meantime, so the next few generations are
+        // measured against the script you turned down.
         expires_at: new Date(Date.now() + cfg.rejectTtlHours * 3_600_000).toISOString(),
       })
       .eq("id", body.id)
@@ -50,6 +52,18 @@ export async function POST(request: Request) {
       .single();
 
     if (error) return fail(error.message, 500);
+
+    // Burn the verse, again. It was already spent when the script was written,
+    // but that happens in a separate call after the insert -- if it failed, or
+    // the function timed out between the two, the verse is still sitting in
+    // the pool waiting to be written up a second time. consume_topic only
+    // increments a counter the pool query compares against zero, so running it
+    // twice costs nothing and closes that window for good.
+    if ((video as { topic_key?: string | null }).topic_key) {
+      await supabase.rpc("consume_topic", {
+        p_topic_key: (video as { topic_key: string }).topic_key,
+      });
+    }
 
     return ok({ video: updated as SpiritualVideo });
   } catch (error) {

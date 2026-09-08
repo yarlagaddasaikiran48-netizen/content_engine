@@ -85,7 +85,7 @@ export function SwipeDeck({
           setMeta((m) => ({ ...m, approvedWaiting: m.approvedWaiting + 1 }));
           setNote({ tone: "ok", text: `Queued: ${card.title}` });
         } else {
-          setNote({ tone: "ok", text: "Rejected. It will come back for 24 hours." });
+          setNote({ tone: "ok", text: `Rejected for good: ${card.title}` });
         }
       } catch (error) {
         // Put it back rather than losing the decision silently.
@@ -236,7 +236,6 @@ export function SwipeDeck({
           <div className="chip-row mt-3">
             {seconds && <span className="chip">{seconds}s</span>}
             <span className="chip">{top.word_count ?? "?"} words</span>
-            {top.status === "rejected" && <span className="chip">seen before</span>}
             {typeof top.max_similarity === "number" && top.max_similarity > 0.3 && (
               <span className="chip">{Math.round(top.max_similarity * 100)}% similar</span>
             )}

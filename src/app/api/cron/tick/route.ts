@@ -69,8 +69,12 @@ export async function GET(request: Request) {
 }
 
 /**
- * Phase 1 — delete anything past its review window, remove its MP3, and give
- * the scripture verse back so it is not burned on a script nobody wanted.
+ * Phase 1 — delete anything past its review window and remove its MP3.
+ *
+ * The verse is NOT handed back. It was burned when the script was written, and
+ * a script you rejected is a verse you have already seen a telling of; putting
+ * it back in the pool is how the same story finds its way in front of you a
+ * second time. Sweeping only deletes the row -- it never revives a topic.
  */
 async function expire(log: string[], ttlHours: number): Promise<void> {
   const supabase = supabaseAdmin();
@@ -93,7 +97,6 @@ async function expire(log: string[], ttlHours: number): Promise<void> {
 
   for (const row of rows) {
     if (row.audio_path) await deleteAudio(row.audio_path).catch(() => {});
-    if (row.topic_key) await supabase.rpc("release_topic", { p_topic_key: row.topic_key });
     await supabase.from("spiritual_videos").delete().eq("id", row.id);
     await supabase.from("generation_log").insert({
       topic_key: row.topic_key,
@@ -102,7 +105,7 @@ async function expire(log: string[], ttlHours: number): Promise<void> {
     });
   }
 
-  log.push(`expire: removed ${rows.length}, topics returned to the pool`);
+  log.push(`expire: removed ${rows.length}, topics stay spent`);
 }
 
 /**
