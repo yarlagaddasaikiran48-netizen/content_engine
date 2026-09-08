@@ -24,6 +24,32 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      # Before anything is checked out or installed. A runner without these
+      # cannot render, cannot report, and cannot even say which one it was
+      # missing — the row simply keeps the "rendering" that approval set. One
+      # second of shell here turns that dead end into a named secret.
+      - name: Check the required secrets are set
+        env:
+          VIDEO_ID: ${{ github.event.client_payload.video_id || inputs.video_id }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PUBLISH_CALLBACK_SECRET: ${{ secrets.PUBLISH_CALLBACK_SECRET }}
+        run: |
+          if [ -z "$VIDEO_ID" ]; then
+            echo "::error::No video_id was dispatched, so there is nothing to render."
+            exit 1
+          fi
+          missing=""
+          for name in NEXT_PUBLIC_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY PUBLISH_CALLBACK_SECRET; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing — add them under" \
+                 "Settings → Secrets and variables → Actions, then approve the video again."
+            exit 1
+          fi
+          echo "Rendering $VIDEO_ID; all required secrets are present."
+
       - name: Check out the repository
         uses: actions/checkout@v4
 
@@ -47,6 +73,11 @@ jobs:
           CALLBACK_URL: ${{ github.event.client_payload.callback_url }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Optional, and unset until the service key is rotated — but it must
+          # match the deployment once it exists. The settings key is derived
+          # from it when present, so a runner without it would decrypt every
+          # stored credential to null and report YouTube as disconnected.
+          SETTINGS_MASTER_KEY: ${{ secrets.SETTINGS_MASTER_KEY }}
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}

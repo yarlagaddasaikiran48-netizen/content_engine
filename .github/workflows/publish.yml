@@ -29,6 +29,32 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      # Same guard as the render workflow, for the same reason: a runner
+      # missing these fails one second in with nothing but "exit code 1", and
+      # the row sits on "publishing" with no explanation anywhere the operator
+      # can see.
+      - name: Check the required secrets are set
+        env:
+          VIDEO_ID: ${{ github.event.client_payload.video_id || inputs.video_id }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PUBLISH_CALLBACK_SECRET: ${{ secrets.PUBLISH_CALLBACK_SECRET }}
+        run: |
+          if [ -z "$VIDEO_ID" ]; then
+            echo "::error::No video_id was dispatched, so there is nothing to publish."
+            exit 1
+          fi
+          missing=""
+          for name in NEXT_PUBLIC_SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY PUBLISH_CALLBACK_SECRET; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing — add them under" \
+                 "Settings → Secrets and variables → Actions, then press Post again."
+            exit 1
+          fi
+          echo "Publishing $VIDEO_ID; all required secrets are present."
+
       - name: Check out the repository
         uses: actions/checkout@v4
 
@@ -50,5 +76,8 @@ jobs:
           # database, so these two secrets are all the runner needs.
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Must match the deployment once it is set: the settings key is
+          # derived from it, and a mismatch decrypts every credential to null.
+          SETTINGS_MASTER_KEY: ${{ secrets.SETTINGS_MASTER_KEY }}
           PUBLISH_CALLBACK_SECRET: ${{ secrets.PUBLISH_CALLBACK_SECRET }}
         run: npx tsx scripts/publish-video.ts --id="$VIDEO_ID" --callback-url="$CALLBACK_URL"

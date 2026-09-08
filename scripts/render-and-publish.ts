@@ -185,12 +185,6 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceKey) {
-    throw new Error("NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.");
-  }
-
   const callbackUrl = arg("callback-url") ?? process.env.CALLBACK_URL ?? "";
   const callbackSecret = process.env.PUBLISH_CALLBACK_SECRET ?? "";
 
@@ -210,11 +204,41 @@ async function main(): Promise<void> {
     }
   }
 
-  const supabase = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false },
-  });
+  // Built before anything is validated, deliberately. Missing credentials used
+  // to throw above this point, which left no way to say so: the row kept the
+  // "rendering" that approval had set and stayed there forever, with the reason
+  // visible only to whoever opened the Actions log. Everything that can fail now
+  // happens below, inside the try, where it gets reported.
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  const supabase =
+    supabaseUrl && serviceKey
+      ? createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
+      : null;
+
+  /** Report a terminal failure through every channel still available. */
+  async function markFailed(message: string): Promise<void> {
+    console.error(`FAILED: ${message}`);
+    // The callback goes first: when the credentials are what is missing, it is
+    // the only route left, since the direct write below needs them.
+    await report("failed", { error: message });
+    if (supabase) {
+      await supabase
+        .from("spiritual_videos")
+        .update({ status: "failed", error_message: message.slice(0, 2_000) })
+        .eq("id", videoId);
+    }
+  }
 
   try {
+    if (!supabase) {
+      throw new Error(
+        "NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required. On a GitHub " +
+          "Actions runner they come from repository secrets — Settings → Secrets and " +
+          "variables → Actions.",
+      );
+    }
+
     // Checked before rendering, not at the upload call: rendering costs minutes
     // of CI time, and failing afterwards would burn all of it to reach an error
     // that was knowable up front.
@@ -385,13 +409,7 @@ async function main(): Promise<void> {
     rmSync(TMP_DIR, { recursive: true, force: true });
     console.log("Done.");
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`FAILED: ${message}`);
-    await report("failed", { error: message });
-    await supabase
-      .from("spiritual_videos")
-      .update({ status: "failed", error_message: message.slice(0, 2_000) })
-      .eq("id", videoId);
+    await markFailed(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 }
