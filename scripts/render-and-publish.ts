@@ -120,7 +120,8 @@ function assertFontPresent(font: string): void {
   throw new Error(
     `The caption font "${font}" is not installed, so the Telugu narration would ` +
       `burn in as empty boxes. Install it before rendering — on Ubuntu that is ` +
-      `"sudo apt-get install -y fonts-noto-telugu && fc-cache -f".`,
+      `"sudo apt-get install -y fonts-noto-core && fc-cache -f". There is no ` +
+      `fonts-noto-telugu package; the Telugu face ships inside fonts-noto-core.`,
   );
 }
 

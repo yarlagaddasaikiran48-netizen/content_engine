@@ -75,11 +75,28 @@ jobs:
       # The narration is Telugu and the runner ships DejaVu, which has no
       # Indic glyphs whatsoever. Without this the captions burn in as a row of
       # empty boxes, and nothing in the render fails to say so.
+      #
+      # There is no "fonts-noto-telugu" package on Ubuntu, which is what this
+      # step used to ask for: apt exited 100 with "unable to locate package"
+      # and every approved video died here, seventeen seconds in, before
+      # FFmpeg was even reached. The Telugu Noto face ships inside
+      # fonts-noto-core. The names have moved between releases before, so ask
+      # for the candidates in order rather than betting the run on one, and
+      # let fc-list — not apt's exit code — decide whether we actually got a
+      # Telugu font.
       - name: Install the Telugu caption font
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq fonts-noto-telugu fontconfig
+          sudo apt-get update -qq || sudo apt-get update -qq
+          sudo apt-get install -y -qq fontconfig
+          for pkg in fonts-noto-core fonts-noto fonts-telu fonts-lohit-telu; do
+            sudo apt-get install -y -qq "$pkg" && echo "installed $pkg" || echo "no $pkg on this release, trying the next"
+          done
           fc-cache -f
+          if ! fc-list | grep -qi "noto sans telugu"; then
+            echo "::error::No Telugu font was installed, so the captions would burn in as empty boxes. Check which package carries Noto Sans Telugu on this runner image."
+            fc-list | grep -i telugu || echo "(no Telugu family at all)"
+            exit 1
+          fi
           fc-list | grep -i telugu | head -n 5
 
       - name: Confirm FFmpeg is available
@@ -105,6 +122,31 @@ jobs:
           YOUTUBE_CATEGORY_ID: ${{ vars.YOUTUBE_CATEGORY_ID || '22' }}
           PUBLISH_CALLBACK_SECRET: ${{ secrets.PUBLISH_CALLBACK_SECRET }}
         run: npx tsx scripts/render-and-publish.ts --id="$VIDEO_ID"
+
+      # Approval sets the row to "rendering" and the render script is what
+      # normally moves it off that. Anything that dies before the script starts
+      # — a missing apt package, a bad npm ci, a runner that vanishes — leaves
+      # the row on "rendering" forever, and the queue shows no Retry for that
+      # status, so the only way out was the SQL editor. Mark it failed with the
+      # step that broke, so the dashboard offers Retry like any other failure.
+      - name: Report the failure back to the dashboard
+        if: failure()
+        env:
+          VIDEO_ID: ${{ github.event.client_payload.video_id || inputs.video_id }}
+          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SERVICE_KEY" ] || [ -z "$VIDEO_ID" ]; then
+            echo "Nothing to report to: the URL, key or video id is missing."
+            exit 0
+          fi
+          url="$SUPABASE_URL/rest/v1/spiritual_videos?id=eq.$VIDEO_ID&status=eq.rendering"
+          # status=eq.rendering, so a run that already reported a real reason
+          # of its own is never overwritten by this blunter one.
+          body=$(jq -n --arg m "The render workflow failed on GitHub Actions. See $RUN_URL" '{status:"failed",error_message:$m}')
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X PATCH "$url" -H "apikey: $SERVICE_KEY" -H "Authorization: Bearer $SERVICE_KEY" -H "Content-Type: application/json" -H "Prefer: return=minimal" -d "$body")
+          echo "Supabase answered HTTP $code when marking $VIDEO_ID failed."
 
       - name: Keep the rendered file for inspection when it fails
         if: failure()
