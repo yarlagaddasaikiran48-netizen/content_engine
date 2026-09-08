@@ -2,6 +2,7 @@ import { fail, messageOf, ok } from "@/lib/api";
 import { loadConfig } from "@/lib/settings/config";
 import { dispatchRender } from "@/lib/github/dispatch";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { renderable } from "@/lib/pipeline/renderable";
 import type { SpiritualVideo } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -33,12 +34,8 @@ export async function POST(request: Request) {
     if (!video) return fail("Video not found.", 404);
 
     const current = video as SpiritualVideo;
-    if (current.status !== "pending" && current.status !== "failed") {
-      return fail(
-        `This video is already "${current.status}" and cannot be approved again.`,
-        409,
-      );
-    }
+    const allowed = renderable(current.status, current.approved_at);
+    if (!allowed.ok) return fail(allowed.reason, 409);
     // There is deliberately no audio check here any more, and its absence is
     // load-bearing. This route used to require audio_url, which was correct
     // when the narration was recorded at generation time. It is not recorded

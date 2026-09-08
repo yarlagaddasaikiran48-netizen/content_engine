@@ -101,6 +101,30 @@ describe("POST /api/approve", () => {
     expect(dispatched).toEqual([]);
   });
 
+  it("retries a row the renderer abandoned on \"rendering\"", async () => {
+    // The workflow died before the script that reports failures could start,
+    // so nothing was ever coming to move this off "rendering".
+    const longAgo = new Date(Date.now() - 40 * 60_000).toISOString();
+    row = { id: "v1", status: "rendering", approved_at: longAgo, title: "An episode" };
+
+    const response = await post("v1");
+
+    expect(response.status).toBe(200);
+    expect(updated).toMatchObject({ status: "approved", error_message: null });
+    expect(dispatched).toHaveLength(1);
+  });
+
+  it("refuses to retry a render that is still inside its timeout", async () => {
+    // Re-dispatching here would render the same video twice.
+    const justNow = new Date(Date.now() - 3 * 60_000).toISOString();
+    row = { id: "v1", status: "rendering", approved_at: justNow, title: "An episode" };
+
+    const response = await post("v1");
+
+    expect(response.status).toBe(409);
+    expect(dispatched).toEqual([]);
+  });
+
   it("refuses an unknown id", async () => {
     row = null;
 

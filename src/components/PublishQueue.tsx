@@ -3,6 +3,8 @@
 import { useState } from "react";
 import type { QueueData } from "@/lib/schedule/queue";
 import { readJson } from "@/lib/http";
+import { STALE_RENDER_MINUTES, stalledRender } from "@/lib/pipeline/renderable";
+
 
 /**
  * The publish line.
@@ -259,7 +261,14 @@ export function PublishQueue({ initial, loadError }: { initial: QueueData; loadE
                   {video.error_message}
                 </p>
               )}
-              {video.status === "failed" && (
+              {stalledRender(video.status, video.approved_at) && (
+                <p className="mt-2 text-xs" style={{ color: "var(--text-muted)" }}>
+                  This has been rendering for over {STALE_RENDER_MINUTES} minutes, which
+                  means the run died without reporting back. Retry sends it again.
+                </p>
+              )}
+
+              {(video.status === "failed" || stalledRender(video.status, video.approved_at)) && (
                 <button
                   type="button"
                   className="btn btn-ghost mt-3 px-4 py-2"
