@@ -11,9 +11,9 @@ export const dynamic = "force-dynamic";
  * POST /api/approve  { id }
  *
  * Marks the row approved and hands it to the GitHub Actions renderer, which
- * builds the MP4 and uploads it to YouTube. The status flow from here is
- * approved -> rendering -> published (or failed), driven by callbacks from the
- * workflow.
+ * records the narration, builds the MP4, and reports back. The status flow
+ * from here is approved -> rendering -> ready, and publishing is a separate
+ * decision made afterwards from the Queue.
  */
 export async function POST(request: Request) {
   try {
@@ -39,9 +39,19 @@ export async function POST(request: Request) {
         409,
       );
     }
-    if (!current.audio_url) {
-      return fail("This video has no audio; it cannot be published.", 422);
-    }
+    // There is deliberately no audio check here any more, and its absence is
+    // load-bearing. This route used to require audio_url, which was correct
+    // when the narration was recorded at generation time. It is not recorded
+    // then any more -- the speech budget is ten requests a day against twenty
+    // for text, so recording every script meant spending the scarcer budget on
+    // the six scripts out of seven that get rejected on sight. The renderer
+    // records it after approval, for the one script that is going to become a
+    // video.
+    //
+    // The gate was not removed with the rest of that change, so every freshly
+    // generated row -- which by construction has no audio -- was refused with
+    // "This video has no audio; it cannot be published." Approve was the first
+    // transition in the pipeline, so nothing could reach the queue at all.
 
     const { data: updated, error: updateError } = await supabase
       .from("spiritual_videos")

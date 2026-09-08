@@ -45,7 +45,9 @@ function prepareTags(tags: string[]): string[] {
   for (const tag of tags) {
     const clean = tag.replace(/^#/, "").replace(/[<>]/g, "").trim();
     if (!clean) continue;
-    if (clean.length + 1 > budget) break;
+    // continue, not break: one long tag used to discard every tag after it,
+    // including short ones that would have fitted comfortably.
+    if (clean.length + 1 > budget) continue;
     out.push(clean);
     budget -= clean.length + 1;
   }
@@ -62,6 +64,12 @@ export async function uploadVideo(request: UploadRequest): Promise<UploadResult>
       description: sanitiseMetadata(request.description).slice(0, 5_000),
       tags: prepareTags(request.tags),
       categoryId: request.categoryId ?? config.youtubeCategoryId,
+      // The listing metadata is English and the narration is Telugu, and
+      // YouTube was told neither. defaultAudioLanguage is the one that earns
+      // its place: it is how the video reaches Telugu speakers' recommendations
+      // and how automatic captions know which language they are transcribing.
+      defaultLanguage: "en",
+      defaultAudioLanguage: "te",
     },
     status: {
       privacyStatus: request.privacyStatus ?? config.youtubePrivacy,

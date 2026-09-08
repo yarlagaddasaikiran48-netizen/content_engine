@@ -7,7 +7,7 @@ import { dueSlot, orderedSlots, slotMinutes, zonedDateKey, zonedParts } from "@/
 import { AnalyticsUnavailable, fetchVideoStats } from "@/lib/youtube/analytics";
 import { saveStats, saveStatsError, videosNeedingStats } from "@/lib/learning/store";
 import { loadConfig } from "@/lib/settings/config";
-import { deleteAudio, supabaseAdmin } from "@/lib/supabase/admin";
+import { deleteAudio, deleteRenderedVideo, supabaseAdmin } from "@/lib/supabase/admin";
 import type { SpiritualVideo } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -16,6 +16,15 @@ export const maxDuration = 60;
 
 /** Left for writing the log out after the last phase. See /api/generate. */
 const TICK_RESPONSE_RESERVE_MS = 8_000;
+
+/**
+ * How far into the tick measuring may still start a video.
+ *
+ * Generation needs roughly twenty seconds to be worth beginning at all, so
+ * stats stops well before that, leaving the rest of the budget to the phase
+ * that actually produces something.
+ */
+const STATS_BUDGET_MS = 25_000;
 
 /**
  * GET /api/cron/tick — the heartbeat, called every five minutes by pg_cron.
@@ -72,7 +81,7 @@ export async function GET(request: Request) {
     await reapStalledRenders(log);
     await renderAhead(log, cfg);
     await publishDueSlot(log, cfg);
-    await refreshPerformance(log);
+    await refreshPerformance(log, startedAt + STATS_BUDGET_MS);
     await topUpBatch(log, cfg, startedAt + (maxDuration * 1_000 - TICK_RESPONSE_RESERVE_MS));
     return ok({ log });
   } catch (error) {
@@ -95,14 +104,16 @@ async function expire(log: string[], ttlHours: number): Promise<void> {
 
   const { data, error } = await supabase
     .from("spiritual_videos")
-    .select("id, topic_key, audio_path, title")
+    .select("id, topic_key, audio_path, video_path, title")
     .in("status", ["pending", "rejected"])
     .not("expires_at", "is", null)
     .lt("expires_at", new Date().toISOString())
     .limit(50);
 
   if (error) throw new Error(`Expiry sweep failed: ${error.message}`);
-  const rows = (data ?? []) as Array<Pick<SpiritualVideo, "id" | "topic_key" | "audio_path" | "title">>;
+  const rows = (data ?? []) as Array<
+    Pick<SpiritualVideo, "id" | "topic_key" | "audio_path" | "video_path" | "title">
+  >;
 
   if (rows.length === 0) {
     log.push(`expire: nothing older than ${ttlHours}h`);
@@ -111,6 +122,12 @@ async function expire(log: string[], ttlHours: number): Promise<void> {
 
   for (const row of rows) {
     if (row.audio_path) await deleteAudio(row.audio_path).catch(() => {});
+    // And the MP4, which was being left behind. A rendered video can be
+    // rejected -- reject only refuses rows that are already published -- and
+    // the sweep then deleted the row while looking only at audio_path, so up
+    // to two hundred megabytes was orphaned in the bucket with nothing left
+    // pointing at it.
+    if (row.video_path) await deleteRenderedVideo(row.video_path).catch(() => {});
     await supabase.from("spiritual_videos").delete().eq("id", row.id);
     await supabase.from("generation_log").insert({
       topic_key: row.topic_key,
@@ -329,7 +346,7 @@ async function publishDueSlot(
  * is the least important phase in the tick and must never be the reason a
  * video does not get published.
  */
-async function refreshPerformance(log: string[]): Promise<void> {
+async function refreshPerformance(log: string[], deadline: number): Promise<void> {
   let due: Awaited<ReturnType<typeof videosNeedingStats>>;
   try {
     due = await videosNeedingStats(3);
@@ -349,6 +366,16 @@ async function refreshPerformance(log: string[]): Promise<void> {
 
   for (const video of due) {
     if (!video.youtube_video_id) continue;
+
+    // Two Google round trips per video, and generation runs after this phase.
+    // A slow Analytics API must cost the tick a measurement, never its script:
+    // measuring is the only phase here with no deadline of its own and nothing
+    // waiting on it.
+    if (Date.now() > deadline) {
+      log.push(`stats: out of time after ${measured}; the rest wait for the next tick`);
+      return;
+    }
+
     try {
       const stats = await fetchVideoStats({
         youtubeVideoId: video.youtube_video_id,

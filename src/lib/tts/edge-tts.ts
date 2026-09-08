@@ -160,11 +160,25 @@ function escapeXml(input: string): string {
     .replace(/>/g, "&gt;");
 }
 
+/**
+ * Escape a value going into an SSML *attribute*.
+ *
+ * The narration was escaped and these four were not, which is backwards about
+ * where untrusted input comes from: the text is written by our own prompt,
+ * while the voice, pitch, rate and volume are free-text settings an operator
+ * edits from a phone. A stray apostrophe in any of them produces malformed
+ * SSML, the service returns no audio, and the *fallback* engine is dead --
+ * which is the one failure that has no fallback of its own.
+ */
+function escapeXmlAttribute(value: string): string {
+  return escapeXml(value).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+}
+
 function buildSsml(text: string, opts: Required<Omit<SynthesizeOptions, "timeoutMs">>): string {
   return (
     `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>` +
-    `<voice name='${opts.voice}'>` +
-    `<prosody pitch='${opts.pitch}' rate='${opts.rate}' volume='${opts.volume}'>` +
+    `<voice name='${escapeXmlAttribute(opts.voice)}'>` +
+    `<prosody pitch='${escapeXmlAttribute(opts.pitch)}' rate='${escapeXmlAttribute(opts.rate)}' volume='${escapeXmlAttribute(opts.volume)}'>` +
     escapeXml(removeIncompatibleCharacters(text)) +
     `</prosody></voice></speak>`
   );
@@ -305,7 +319,12 @@ function synthesizeChunk(
       // skewed clock. Learn the offset from the server so the retry succeeds.
       const serverSeconds = parseServerDate(res.headers.date as string | undefined);
       if (res.statusCode === 403 && serverSeconds !== null) {
-        clockSkewSeconds += serverSeconds - Date.now() / 1000;
+        // Assignment, not accumulation. The delta is always measured against
+        // the UNCORRECTED local clock, so adding it a second time doubles a
+        // correction that was already right -- and a machine that 403s twice
+        // ends up further out with every attempt, permanently losing the
+        // fallback engine.
+        clockSkewSeconds = serverSeconds - Date.now() / 1000;
         finish(
           new EdgeTTSError(
             `Edge TTS handshake rejected (403). Clock skew corrected by ${clockSkewSeconds.toFixed(1)}s; retrying.`,
@@ -326,11 +345,21 @@ function synthesizeChunk(
 
     socket.on("close", (code) => {
       if (settled) return;
-      if (parts.length > 0) {
-        finish(undefined, Buffer.concat(parts));
-        return;
-      }
-      finish(new EdgeTTSError(`Edge TTS connection closed early (code ${code}).`));
+
+      // Audio arrived, but the service never said Path:turn.end -- so this is
+      // the beginning of the narration and not the whole of it. Returning it
+      // used to look like success: a plausible duration, format mp3, no error
+      // and no log line, and a video went to the channel with the story
+      // cutting off mid-sentence. Nothing downstream can detect that, because
+      // a short file is indistinguishable from a short script. Failing here
+      // costs a retry; succeeding here costs a published video.
+      finish(
+        new EdgeTTSError(
+          parts.length > 0
+            ? `Edge TTS connection dropped after ${parts.length} audio frame(s) without finishing the utterance (code ${code}). The narration would have been cut off, so it was discarded.`
+            : `Edge TTS connection closed early (code ${code}).`,
+        ),
+      );
     });
   });
 }

@@ -54,3 +54,21 @@ export async function deleteAudio(objectPath: string): Promise<void> {
     /* nothing useful to do if cleanup fails */
   }
 }
+
+/** Where the renderer puts the finished MP4. */
+export const VIDEO_BUCKET = "spiritual-video";
+
+/**
+ * Best-effort cleanup of a rendered MP4.
+ *
+ * Worth having its own function rather than being folded into deleteAudio: an
+ * MP4 can be two hundred megabytes where an MP3 is under one, so a leaked
+ * video is a different order of problem from a leaked narration.
+ */
+export async function deleteRenderedVideo(objectPath: string): Promise<void> {
+  try {
+    await supabaseAdmin().storage.from(VIDEO_BUCKET).remove([objectPath]);
+  } catch {
+    /* nothing useful to do if cleanup fails */
+  }
+}

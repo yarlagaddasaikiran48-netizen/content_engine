@@ -28,7 +28,14 @@ const PROFANITY = [
   "saala", "haramzada", "lodu", "chodu",
   // Romanised Telugu abuse. Latin script, so the word-boundary match below
   // still applies to these.
-  "lanja", "lanjakodaka", "munda", "modda", "pooku", "denga", "dengey",
+  //
+  // "munda" was here and was removed. It is coarse, but it is also the name of
+  // a demon Kali kills in the Devi Mahatmya -- which sits inside the Markandeya
+  // Purana, one of the eighteen in the daily rotation. "Kali destroyed the
+  // demons Chanda and Munda, and became Chamunda" was unpublishable, and since
+  // "Chamunda" alone passes the word-boundary check, the rejection looked
+  // random rather than explicable.
+  "lanja", "lanjakodaka", "modda", "pooku", "denga", "dengey",
   "yedava", "vedhava", "sachinodu", "gudda",
 ];
 
@@ -66,20 +73,57 @@ const FORBIDDEN_TOPICS: Array<{ pattern: RegExp; label: string }> = [
   { pattern: /\b(hindu|hinduism)\s+(is\s+)?(better|superior|greater)\s+than\b/i, label: "religious superiority" },
   { pattern: /\b(muslim|christian|islam|christianity|sikh|buddhis[tm]|jain)\w*\s+(are|is)\s+(wrong|false|evil|inferior)\b/i, label: "attacking another faith" },
   { pattern: /\b(convert|conversion)\s+(to|from)\s+(hinduism|islam|christianity)\b/i, label: "religious conversion" },
-  { pattern: /\b(upper|lower|high|low)\s+caste\b|\bcaste\s+(system|superiority|purity)\b|\buntouchab/i, label: "caste" },
-  { pattern: /\b(kill|murder|attack|destroy|burn)\s+(them|him|her|those|the)\b/i, label: "violence" },
+  // Caste, but not the word "untouchable" used of a body. `\buntouchab`
+  // matched "a boon that made the demon untouchable by any weapon", which is a
+  // stock formula in these stories and has nothing to do with caste.
+  { pattern: /\b(upper|lower|high|low)\s+caste\b|\bcaste\s+(system|superiority|purity)\b|\buntouchabilit|\buntouchable\s+(caste|community|people|class)\b/i, label: "caste" },
+
+  // INCITEMENT, not narration.
+  //
+  // This used to read /\b(kill|murder|attack|destroy|burn)\s+(them|him|her|
+  // those|the)\b/, and on a channel that retells the Puranas it was rejecting
+  // the corpus. Measured against descriptions written exactly as the master
+  // prompt orders them: "Yama came to kill him", "Vishnu took the Narasimha
+  // form to destroy the king", "his soldiers to burn the boy" -- all thrown
+  // away, each costing a whole generation, a spent topic and another Gemini
+  // request, with the log saying only "unsafe".
+  //
+  // These stories are ABOUT gods killing demons. That is the content, and a
+  // filter that cannot tell it from incitement cannot be used here. What must
+  // never appear is violence aimed at the viewer or at real people, so that is
+  // what this matches now: the second person, and named real-world groups.
+  {
+    pattern:
+      /\byou\s+(should|must|need to|have to)\s+(kill|murder|attack|destroy|burn)\b|\b(kill|murder|attack|destroy|burn)\s+(your|yourself|yourselves)\b|\b(kill|murder|attack|destroy|burn)\s+(all\s+)?(the\s+)?(muslims|christians|hindus|sikhs|jews|buddhists|jains|kafirs|infidels)\b/i,
+    label: "incitement to violence",
+  },
+
   { pattern: /\b(suicide|kill yourself|end your life)\b/i, label: "self-harm" },
-  { pattern: /\b(sex|sexual|erotic|porn|nude|naked)\b/i, label: "sexual content" },
-  { pattern: /\b(alcohol|drugs|cocaine|weed|marijuana|smoking)\b/i, label: "substances" },
+
+  // "naked" and "nude" alone rejected "Shiva sat naked in ash on the cremation
+  // ground" -- digambara, an iconographic fact, not sexual content. They now
+  // need an actually sexual object.
+  { pattern: /\b(sex|sexual|erotic|porn|pornographic)\b|\b(nude|naked)\s+(woman|women|girl|girls|man|men|body|bodies|photo|photos|picture|pictures)\b/i, label: "sexual content" },
+
+  // Bare "smoking" rejected "the smoking remains of Daksha's sacrifice", and
+  // "weed" is also a plant. Both now need something being consumed.
+  { pattern: /\b(alcohol|liquor|whisky|cocaine|heroin|marijuana|ganja)\b|\bdrugs\b|\bsmoking\s+(a\s+)?(cigarette|cigarettes|beedi|ganja|weed|joint)\b/i, label: "substances" },
 ];
 
 /** Claims that are harmful, unprovable, or would get a channel demonetised. */
 const HARMFUL_CLAIMS: Array<{ pattern: RegExp; label: string }> = [
-  { pattern: /\b(cure|cures|heal|heals|treatment)\s+(cancer|diabetes|aids|hiv|covid|tuberculosis|disease)\b/i, label: "medical cure claim" },
+  // The named diseases stay: no Purana episode claims to cure cancer, so there
+  // is no false positive to have. Bare "disease" is gone -- "only Shiva's grace
+  // could heal disease and death itself" is a line from a story, not a claim
+  // made to the viewer. A claim aimed at the viewer is caught on the next line.
+  { pattern: /\b(cure|cures|heal|heals|treatment)\s+(cancer|diabetes|aids|hiv|covid|tuberculosis)\b/i, label: "medical cure claim" },
+  { pattern: /\b(this|these|the)\s+(mantra|chant|stotra|ritual|puja|remedy)\s+(will|can)\s+(cure|heal|remove)\s+(your|any|all)\b/i, label: "medical cure claim" },
   { pattern: /\b(stop|quit|avoid|don'?t take)\s+(your\s+)?(medicine|medication|treatment|doctor)\b/i, label: "discouraging medical care" },
   { pattern: /\b(guarantee|guaranteed|100%\s*sure|definitely will)\s+(make you|get you|bring you)?\s*(rich|wealthy|money|crore|lakh)\b/i, label: "guaranteed wealth claim" },
   { pattern: /\b(send|donate|pay|transfer)\s+(me|us)\s+(money|rs|rupees|₹|\$)/i, label: "solicitation" },
-  { pattern: /\b(curse|black magic|vashikaran|tantrik)\s+(will|can)\s+(destroy|harm|kill)/i, label: "occult harm" },
+  // Aimed at the viewer, not narrated. "The sage's curse will destroy the line
+  // of Yadu" is the Mausala Parva; threatening the person watching is not.
+  { pattern: /\b(curse|black magic|vashikaran|tantrik)\s+(will|can)\s+(destroy|harm|kill)\s+(you|your)\b/i, label: "occult harm" },
   { pattern: /\bleave\s+your\s+(family|children|wife|husband|job)\b/i, label: "urging abandonment" },
 ];
 

@@ -65,7 +65,16 @@ export interface ValidationResult {
 }
 
 export function countWords(text: string): number {
-  return text.trim().split(/\s+/).filter(Boolean).length;
+  // JavaScript's \s does not include the zero-width space or the zero-width
+  // non-joiner, so a body separated by them counts as a single word and is
+  // rejected as far too short. ZWNJ is meaningful inside Telugu conjuncts, so
+  // it is treated as nothing rather than as a break: only genuinely invisible
+  // separators become spaces.
+  return text
+    .replace(/[​⁠﻿]/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
 }
 
 /**
@@ -74,7 +83,14 @@ export function countWords(text: string): number {
  */
 function cleanNarration(body: string): string {
   return body
-    .replace(/\((?:pause|beat|music|sfx|sound|voice[^)]*)\)/gi, " ")
+    // The `[^)]*` used to bind to the `voice` alternative alone, so every
+    // other word had to match the parenthesis exactly: "(pause)" was stripped
+    // but "(pause 2s)", "(music swells)" and "(sound of thunder)" all
+    // survived — into the stored body, into the word count, and into the
+    // narration, where the voice engine read them aloud. Which is the one
+    // thing this function exists to prevent. The group now spans the whole
+    // parenthesis, whichever word opened it.
+    .replace(/\((?:pause|beat|music|sfx|sound|voice|silence|sings?|laughs?)\b[^)]*\)/gi, " ")
     .replace(/\[[^\]]*\]/g, " ")
     .replace(/^\s*(narrator|voice ?over|vo|host)\s*:\s*/gim, "")
     .replace(/[*_`#]+/g, "")

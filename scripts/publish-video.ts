@@ -103,7 +103,14 @@ async function main(): Promise<void> {
     console.log(`  fetched ${(bytes.length / 1024 / 1024).toFixed(2)} MB`);
 
     // ---- 2. upload ----
-    const description = `${video.seo_description}\n\n${video.hashtags.join(" ")}`;
+    // The master prompt already tells the model to end seo_description with the
+    // hashtags, so appending them again put the same eight tags on every
+    // published description twice. Only add them when they are genuinely
+    // missing -- a description that lost them is worse than one that repeats.
+    const alreadyTagged = video.hashtags.some((tag) => video.seo_description.includes(tag));
+    const description = alreadyTagged
+      ? video.seo_description
+      : `${video.seo_description}\n\n${video.hashtags.join(" ")}`;
     const result = await uploadVideo({
       video: bytes,
       title: video.title,
@@ -125,11 +132,33 @@ async function main(): Promise<void> {
     });
 
     if (archiveError) {
-      // The video IS live. Say so loudly rather than failing the job in a way
-      // that invites a retry and a duplicate upload.
+      // The video IS live. Getting the row out of "ready" is now the urgent
+      // part, and the callback cannot be relied on to do it: report() is a
+      // no-op when the callback URL or secret is missing, and a
+      // workflow_dispatch run has neither. Left in "ready", both the tick's
+      // publish phase and the Post button would happily upload the same video
+      // to the channel again.
+      //
+      // So write the status directly, with the credentials this script already
+      // holds. Worst case the row is a duplicate of the archive; best case it
+      // is the only thing standing between a failed RPC and a second upload.
+      const { error: markError } = await supabase
+        .from("spiritual_videos")
+        .update({
+          status: "published",
+          youtube_video_id: result.videoId,
+          youtube_url: result.shortsUrl,
+          published_at: new Date().toISOString(),
+          error_message: `Uploaded, but archiving failed: ${archiveError.message}`,
+        })
+        .eq("id", videoId);
+
       console.error(
         `  PUBLISHED but not archived: ${archiveError.message}. ` +
-          `The video is live at ${result.shortsUrl}; the row must be cleaned up by hand.`,
+          `The video is live at ${result.shortsUrl}. ` +
+          (markError
+            ? `The row could ALSO not be marked published (${markError.message}) — it must be fixed by hand before the next tick re-uploads it.`
+            : `The row has been marked published directly, so it will not be uploaded again.`),
       );
       return;
     }

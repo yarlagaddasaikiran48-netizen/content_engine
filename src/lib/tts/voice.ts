@@ -31,7 +31,14 @@ export const SCRIPT_TONES: readonly ScriptTone[] = ["soft", "intense"];
 
 /** Anything the model invents that is not a known tone reads as the gentler one. */
 export function normaliseTone(value: unknown): ScriptTone {
-  return value === "intense" ? "intense" : "soft";
+  // Trimmed and folded before comparing. An exact match meant "Intense",
+  // " intense" or "INTENSE" all silently became "soft", so an episode about a
+  // curse or a god's wrath would be read in the gentle woman's voice with
+  // nothing anywhere saying why. The schema enum makes that unlikely rather
+  // than impossible, and the cost of being tolerant here is zero.
+  return typeof value === "string" && value.trim().toLowerCase() === "intense"
+    ? "intense"
+    : "soft";
 }
 
 export interface VoiceChoice {

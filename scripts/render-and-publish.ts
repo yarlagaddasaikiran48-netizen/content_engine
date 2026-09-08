@@ -220,7 +220,7 @@ async function recordNarration(
     contentTypeFor(speech),
   );
 
-  await db
+  const { error: saveError } = await db
     .from("spiritual_videos")
     .update({
       audio_path: path,
@@ -230,6 +230,19 @@ async function recordNarration(
       voice: speech.voice,
     })
     .eq("id", video.id);
+
+  // This write is the entire reason the narration is recorded once rather than
+  // on every retry, and its result was being discarded. If it fails silently,
+  // the MP3 sits in storage with no audio_path pointing at it -- so nothing
+  // will ever delete it -- and the next attempt sees a null audio_url and
+  // spends another Gemini speech request, out of ten for the whole day.
+  if (saveError) {
+    throw new Error(
+      `The narration was recorded and uploaded, but the row could not be updated ` +
+        `(${saveError.message}). Retrying would spend another of the day's ten speech ` +
+        `requests, so this stops here. The audio is at ${publicUrl}.`,
+    );
+  }
 
   console.log(`  narration ${speech.durationSeconds}s in ${speech.voice}`);
   return publicUrl;
@@ -300,16 +313,13 @@ async function main(): Promise<void> {
       );
     }
 
-    // Checked before rendering, not at the upload call: rendering costs minutes
-    // of CI time, and failing afterwards would burn all of it to reach an error
-    // that was knowable up front.
+    // No YouTube check here any more. This job used to upload as well as
+    // render, so checking the credentials before spending CI minutes was
+    // right. Uploading moved to publish-video.ts, and the check did not: a
+    // disconnected YouTube account failed the RENDER, marking the row failed
+    // and showing the operator an error about the wrong job entirely. The
+    // publish script checks its own credentials, which is where it belongs.
     const cfg = await loadConfig();
-    if (!cfg.youtubeClientId || !cfg.youtubeClientSecret || !cfg.youtubeRefreshToken) {
-      throw new Error(
-        "YouTube is not connected. Open Settings, save the YouTube client ID and secret, " +
-          "then press Connect YouTube.",
-      );
-    }
 
     console.log(`Rendering ${videoId}`);
     await report("rendering");
@@ -378,6 +388,17 @@ async function main(): Promise<void> {
     }
     const duration = Number((audioSeconds + 0.6).toFixed(2));
     console.log(`  audio ${audioSeconds.toFixed(2)}s → video ${duration}s`);
+
+    // Replace the speech engine's estimate with the length ffprobe measured.
+    // The estimate is what the row carried, what the archive inherits, and
+    // what the hook score is computed against: three seconds into a video is a
+    // FRACTION of its runtime, so a wrong duration samples the retention curve
+    // at the wrong place and compares one video's first three seconds against
+    // another's first four.
+    await supabase
+      .from("spiritual_videos")
+      .update({ duration_seconds: duration })
+      .eq("id", videoId);
 
     // ---- 4. captions ----
     assertFontPresent(CAPTION_FONT);
