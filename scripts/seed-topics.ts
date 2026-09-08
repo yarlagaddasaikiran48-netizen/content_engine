@@ -310,7 +310,16 @@ async function main(): Promise<void> {
       .upsert(batch, { onConflict: "topic_key", ignoreDuplicates: true });
 
     if (error) {
-      console.error(`  batch at ${index} failed: ${error.message}`);
+      // Supabase puts the useful part in code/details/hint, not in message. A
+      // bare "404 Not Found" cost a run to diagnose because the rest was
+      // dropped on the floor.
+      console.error(`  batch at ${index} failed.`);
+      console.error(`    message: ${error.message}`);
+      if (error.code) console.error(`    code:    ${error.code}`);
+      if (error.details) console.error(`    details: ${error.details}`);
+      if (error.hint) console.error(`    hint:    ${error.hint}`);
+      console.error(`    project: ${new URL(url).host}`);
+      console.error(`    columns: ${Object.keys(batch[0] ?? {}).join(", ")}`);
       process.exit(1);
     }
     inserted += batch.length;

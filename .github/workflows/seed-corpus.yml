@@ -87,6 +87,50 @@ jobs:
             fi
           done
 
+      # Both workflows that write to Supabase have never once succeeded, and
+      # both read the same two secrets. This asks the database one harmless
+      # question and prints the status code, which separates "wrong URL" from
+      # "wrong key" from "no such table" without exposing either secret.
+      - name: Ask Supabase whether the credentials work
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          base="${NEXT_PUBLIC_SUPABASE_URL%/}"
+          case "$base" in
+            https://*.supabase.co) echo "URL shape looks right." ;;
+            *) echo "::error::NEXT_PUBLIC_SUPABASE_URL should look like" \
+                    "https://<project>.supabase.co with no trailing slash or path."
+               echo "It is ${#base} characters long and starts with $(printf '%.8s' "$base")."
+               exit 1 ;;
+          esac
+
+          key_len=${#SUPABASE_SERVICE_ROLE_KEY}
+          echo "Service key is $key_len characters."
+          if [ "$key_len" -lt 100 ]; then
+            echo "::error::That is far too short for a service_role key. It is a JWT and" \
+                 "runs to a few hundred characters — check the whole value was pasted."
+            exit 1
+          fi
+
+          code=$(curl -s -o /tmp/probe.json -w "%{http_code}" --max-time 30 \
+            "$base/rest/v1/topic_ledger?select=topic_key&limit=1" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY")
+          echo "GET /rest/v1/topic_ledger -> HTTP $code"
+          head -c 400 /tmp/probe.json || true
+          echo
+
+          case "$code" in
+            200) echo "Credentials work and topic_ledger is readable." ;;
+            401|403) echo "::error::Supabase rejected the key (HTTP $code). SUPABASE_SERVICE_ROLE_KEY" \
+                          "must be the service_role key from Project Settings → API keys, not the anon key." ; exit 1 ;;
+            404) echo "::error::No topic_ledger table at that project (HTTP 404). Either the URL points" \
+                      "at the wrong project, or supabase/schema.sql was never run in the SQL editor." ; exit 1 ;;
+            000) echo "::error::Could not reach $base at all. Check the project URL." ; exit 1 ;;
+            *) echo "::error::Unexpected HTTP $code from Supabase." ; exit 1 ;;
+          esac
+
       - name: Write the curated topics
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
