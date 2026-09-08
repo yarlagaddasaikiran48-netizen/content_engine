@@ -30,6 +30,16 @@ export interface PromptInput {
   /** Angles already tried in this run and rejected as too similar. */
   avoidAngles?: string[];
   /**
+   * What went wrong with the last script for THIS passage, when the only
+   * problem was its length.
+   *
+   * Worth its own field rather than another entry in avoidAngles, because it
+   * is the one rejection the model can fix by rewriting rather than by
+   * choosing a different story -- and telling it the number it actually hit is
+   * far more use than repeating the target it already missed.
+   */
+  lengthFeedback?: string | null;
+  /**
    * What the channel's own published videos say works, already rendered as
    * prose by lib/learning. Null until there is enough measured work to have
    * an opinion, and null is not the same as an empty section: an empty "what
@@ -46,9 +56,10 @@ export function buildPrompt({
   recentTitles,
   avoidAngles = [],
   learningBrief = null,
+  lengthFeedback = null,
   cfg,
 }: PromptInput): string {
-  const { min: MIN_WORDS, max: MAX_WORDS } = wordWindow(cfg);
+  const { min: MIN_WORDS, max: MAX_WORDS, ideal: IDEAL_WORDS } = wordWindow(cfg);
   const sections: string[] = [];
 
   sections.push(`TODAY'S CONTEXT
@@ -102,8 +113,18 @@ ${avoidAngles.map((angle) => `- ${angle}`).join("\n")}`);
   // weights the end of a long prompt more heavily than its middle.
   if (learningBrief) sections.push(learningBrief);
 
+  if (lengthFeedback) sections.push(lengthFeedback);
+
   sections.push(`YOUR TASK
-Write the script for this passage. The narration must be between ${MIN_WORDS} and ${MAX_WORDS} words — that is ${cfg.targetSeconds} seconds of speech, and it will be rejected outside that range. Count your words before answering.
+Write the script for this passage. The narration must be between ${MIN_WORDS} and ${MAX_WORDS} words. Aim for ${IDEAL_WORDS}.
+
+That range is not a style preference. It is measured: the Telugu voices read at about eighty-three words a minute, so ${IDEAL_WORDS} words is ${cfg.targetSeconds} seconds of speech, and a script outside the range is thrown away unread.
+
+Writing SHORT is the failure that actually happens, every time. Everything above tells you to cut — short sentences, fragments, end early rather than pad — and that advice is about density, not about length. ${MIN_WORDS} words is the floor, and coming in at ${MIN_WORDS - 1} is the same as coming in at zero.
+
+If you are under the floor, do not pad the ending and do not add commentary. Go back into the middle and put more of the story on the screen: what the place looked like, what was actually said, what it cost. That is where the missing words live.
+
+Before you answer, count the words in script_body. If the number is below ${MIN_WORDS}, you are not finished.
 
 Return JSON with exactly these fields:
   title           — the YouTube title

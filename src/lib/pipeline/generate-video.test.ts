@@ -18,6 +18,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 let attemptDurationMs = 0;
 let generateCalls = 0;
 let claimCalls: string[] = [];
+let topicsSeen: string[] = [];
+let feedbackSeen: Array<string | null> = [];
+let validationErrors = ["Script is 52 words; too short for 60 seconds (minimum 68)."];
 
 const CONFIG = {
   maxGenerationAttempts: 4,
@@ -48,8 +51,10 @@ vi.mock("@/lib/sources/hook", () => ({
 }));
 
 vi.mock("@/lib/gemini/generate", () => ({
-  generateScript: async () => {
+  generateScript: async (input: { topic: { topic_key: string }; lengthFeedback?: string | null }) => {
     generateCalls += 1;
+    topicsSeen.push(input.topic.topic_key);
+    feedbackSeen.push(input.lengthFeedback ?? null);
     // Stand in for the real cost of a Gemini call for a 60-second script.
     await new Promise((resolve) => setTimeout(resolve, attemptDurationMs));
     return {
@@ -69,7 +74,7 @@ vi.mock("@/lib/gemini/generate", () => ({
 vi.mock("@/lib/safety/validate", () => ({
   validateScript: () => ({
     valid: false,
-    errors: ["Script is 3 words; the range is 68-92."],
+    errors: validationErrors,
     safetyIssues: [],
     cleaned: null,
   }),
@@ -125,13 +130,18 @@ async function run(deadlineMs: number) {
   return generateVideo({ deadline: Date.now() + deadlineMs });
 }
 
-describe("generateVideo deadlines", () => {
-  beforeEach(() => {
-    generateCalls = 0;
-    claimCalls = [];
-    attemptDurationMs = 0;
-  });
+// Top level on purpose: scoped inside one describe, these counters carried
+// over into the next block and it measured the previous block's run.
+beforeEach(() => {
+  generateCalls = 0;
+  claimCalls = [];
+  topicsSeen = [];
+  feedbackSeen = [];
+  attemptDurationMs = 0;
+  validationErrors = ["Script is 52 words; too short for 60 seconds (minimum 68)."];
+});
 
+describe("generateVideo deadlines", () => {
   it("stops before starting an attempt it cannot finish", async () => {
     // Each attempt costs 60ms; the budget allows roughly one.
     attemptDurationMs = 60;
@@ -182,5 +192,60 @@ describe("generateVideo deadlines", () => {
 
     expect(generateCalls).toBe(1);
     expect(result.ok).toBe(false);
+  });
+});
+
+/**
+ * Measured, not assumed: the Telugu voices read at 83 words a minute, so the
+ * 68-92 window for a 60-second script is correct and the model was simply
+ * writing short — 67, 52, 57 and 51 words across four attempts in production.
+ *
+ * Each of those cost a scripture passage. That is the expensive part: the
+ * ledger took eight hundred hand-built entries to fill, and a script that is
+ * one word short is the right story told slightly too fast, not the wrong
+ * story.
+ */
+describe("a script that is only the wrong length", () => {
+  it("tells the same passage again instead of spending another one", async () => {
+    attemptDurationMs = 0;
+
+    await run(30_000);
+
+    expect(topicsSeen[0]).toBe(topicsSeen[1]);
+  });
+
+  it("tells the model the count it actually hit", async () => {
+    await run(30_000);
+
+    expect(feedbackSeen[0]).toBeNull();
+    expect(feedbackSeen[1]).toContain("52 words");
+    expect(feedbackSeen[1]).toMatch(/same episode again/i);
+  });
+
+  it("gives each passage one second chance, not an unlimited supply", async () => {
+    await run(30_000);
+
+    // Four attempts, two passages, each told twice — never the same one thrice.
+    const counts = new Map<string, number>();
+    for (const key of topicsSeen) counts.set(key, (counts.get(key) ?? 0) + 1);
+    expect([...counts.values()].every((n) => n <= 2)).toBe(true);
+    expect(new Set(topicsSeen).size).toBeGreaterThan(1);
+  });
+
+  it("does not re-tell a passage rejected for anything else", async () => {
+    // A banned phrase or Latin letters in the narration says the ANGLE was
+    // wrong, and the right answer is a different story, not the same one again.
+    validationErrors = ["Narration contains Latin letters."];
+
+    await run(30_000);
+
+    expect(new Set(topicsSeen).size).toBe(topicsSeen.length);
+  });
+
+  it("does not carry the feedback into an unrelated passage", async () => {
+    await run(30_000);
+
+    // Attempt 3 starts a new passage, so it must arrive with a clean slate.
+    expect(feedbackSeen[2]).toBeNull();
   });
 });

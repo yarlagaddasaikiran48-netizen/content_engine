@@ -262,6 +262,21 @@ async function loadLearningBrief(
   }
 }
 
+/**
+ * Was the only thing wrong with this script its length?
+ *
+ * Worth asking, because length is the one rejection a rewrite can fix. Every
+ * other failure -- a banned phrase, Latin letters in the narration, a safety
+ * hit -- says something about the angle the model took, and the right answer
+ * is a different story. A script that is sixty-seven words when it needed
+ * sixty-eight is not the wrong story. It is the right story, told slightly too
+ * fast, and throwing away the scripture passage with it spends material that
+ * took a database of eight hundred entries to accumulate.
+ */
+function onlyTooShortOrLong(errors: string[]): boolean {
+  return errors.length > 0 && errors.every((error) => /^Script is \d+ words;/.test(error));
+}
+
 /** Layer 3: how close is this to anything we have already made? */
 async function similarityAgainstHistory(body: string): Promise<number> {
   const { data, error } = await supabaseAdmin().rpc("max_script_similarity", {
@@ -285,6 +300,11 @@ export async function generateVideo(
   const rejectedAngles: string[] = [];
   /** Puranas found empty during this run, so later attempts do not re-ask. */
   const exhaustedPuranas = new Set<string>();
+  /** A passage to tell again, and what to say about the last telling of it. */
+  let retryTopic: Topic | null = null;
+  let lengthFeedback: string | null = null;
+  /** One second chance each — a passage that is short twice is not the problem. */
+  const retriedForLength = new Set<string>();
 
   const hook = await buildHookContext();
   log.push(`Context: ${hook.occasion}`);
@@ -320,10 +340,14 @@ export async function generateVideo(
     }
 
     const attemptStartedAt = Date.now();
+    // Consumed by this attempt only: a second failure is not the same failure.
+    const feedbackForThisAttempt = lengthFeedback;
+    lengthFeedback = null;
     let topic: Topic | null = null;
 
     try {
-      topic = await claimTopic(triedTopics, log, config, exhaustedPuranas);
+      topic = retryTopic ?? (await claimTopic(triedTopics, log, config, exhaustedPuranas));
+      retryTopic = null;
       if (!topic) {
         log.push("No unused topics remain in the ledger.");
         await recordAttempt(null, attempt, "no_topics", "topic_ledger exhausted");
@@ -336,7 +360,7 @@ export async function generateVideo(
         };
       }
 
-      triedTopics.push(topic.topic_key);
+      if (!triedTopics.includes(topic.topic_key)) triedTopics.push(topic.topic_key);
       topic = await hydrateTopic(topic);
       log.push(`Attempt ${attempt}: ${topic.scripture} — ${topic.reference} (${topic.title})`);
 
@@ -349,6 +373,7 @@ export async function generateVideo(
           recentTitles,
           avoidAngles: rejectedAngles,
           learningBrief,
+          lengthFeedback: feedbackForThisAttempt,
         },
         // So "key 1 is out of quota, moving on" reaches the operator rather
         // than dying inside the rotation.
@@ -363,6 +388,24 @@ export async function generateVideo(
           validation.safetyIssues.length > 0 ? "unsafe" : "invalid";
         log.push(`  rejected (${outcome}): ${detail}`);
         await recordAttempt(topic.topic_key, attempt, outcome, detail);
+
+        // Length alone: keep the passage and tell the model what it hit.
+        // Without this, four attempts spend four scripture topics to learn the
+        // same lesson four times, and the run ends with nothing written and
+        // four fewer stories left to tell.
+        if (onlyTooShortOrLong(validation.errors) && !retriedForLength.has(topic.topic_key)) {
+          retriedForLength.add(topic.topic_key);
+          retryTopic = topic;
+          lengthFeedback =
+            `YOUR LAST ATTEMPT AT THIS PASSAGE WAS THE RIGHT STORY AND THE WRONG LENGTH\n` +
+            `${detail}\n` +
+            `Tell the same episode again, at the length asked for below. Do not switch to a ` +
+            `different part of the story and do not pad the ending — put the missing words in ` +
+            `the middle, as scene: what the place looked like, what was said, what it cost.`;
+          log.push("  same passage, one more time, with the word count it actually hit.");
+          continue;
+        }
+
         rejectedAngles.push(raw.title);
         await releaseTopic(topic.topic_key);
         continue;
