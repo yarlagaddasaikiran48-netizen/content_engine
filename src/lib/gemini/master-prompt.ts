@@ -122,6 +122,10 @@ One field is Telugu. The other three are English. Do not mix them up — this is
 
 script_body — **TELUGU, in the Telugu alphabet.** The narration, spoken word for word, inside the word count given in the prompt. This is the only field the voice reads, and the only field written in Telugu.
 
+deity — **ENGLISH**, one bare name, nothing else. The one figure this episode is actually about: "Shiva", "Krishna", "Parvati", "Markandeya", "Narada". Judge the story, not the book — a Shiva Purana episode whose whole weight is on Ganesha returns "Ganesha". No "Lord", no epithet chain, no sentence. This chooses what is on the screen behind the words, so getting it wrong shows a viewer the wrong god.
+
+scene_prompt — **ENGLISH**, one sentence. The single image this episode should show, written as a prompt for a photorealistic CGI render: who is in frame, what they are doing at the moment the story turns, where, and what the light is doing. Cinematic and reverent — the register of a film, not an illustration. Never say cartoon, comic, anime, chibi, sticker or clipart, and never describe a cute or comic version of a god.
+
 tone — **ENGLISH**, exactly one of "soft" or "intense". This is not decoration: it chooses whether a woman or a man narrates the video. Write "intense" when the episode turns on wrath, war, a curse, death, or a god's judgement. Write "soft" when it turns on teaching, devotion, consolation, or a quiet realisation. Judge the episode, not the opening line.
 
 title — **ENGLISH.** Under seventy characters. Curiosity plus specificity. It must be honest about what is in the video; a title that oversells is a retention failure the moment they realise. No all-caps, at most one emoji, and prefer none.

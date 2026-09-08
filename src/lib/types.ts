@@ -64,6 +64,10 @@ export interface SpiritualVideo {
   voice: string;
   /** soft | intense — set at write time, read by the renderer to pick a voice. */
   tone: ScriptTone;
+  /** The god the episode centres on; picks the backgrounds folder. */
+  deity: string | null;
+  /** The image this episode should show, for whoever or whatever makes it. */
+  scene_prompt: string | null;
 
   youtube_video_id: string | null;
   youtube_url: string | null;
@@ -116,6 +120,10 @@ export interface GeneratedScript {
   hashtags: string[];
   /** Which register it wrote in, and therefore whose voice reads it aloud. */
   tone: ScriptTone;
+  /** The god the episode centres on, which chooses what is on screen. */
+  deity: string;
+  /** One sentence describing the image this episode should show. */
+  scene_prompt: string;
 }
 
 /** The "why today" angle: real calendar + real trends, never invented. */

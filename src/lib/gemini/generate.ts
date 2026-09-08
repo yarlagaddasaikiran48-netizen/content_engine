@@ -48,6 +48,16 @@ const RESPONSE_SCHEMA = {
       minItems: "8",
       maxItems: "8",
     },
+    deity: {
+      type: Type.STRING,
+      description:
+        "The one god or figure this episode centres on, in English, as a bare name — 'Shiva', 'Krishna', 'Parvati', 'Narada'. Whoever the story is actually about, not whichever Purana it sits in. This chooses what is on screen.",
+    },
+    scene_prompt: {
+      type: Type.STRING,
+      description:
+        "One English sentence describing the single image this episode should show, written as a prompt for a photorealistic CGI render: the figure, what they are doing at the story's turn, the setting, the light. Cinematic and reverent, never cartoon or comic styling.",
+    },
     tone: {
       type: Type.STRING,
       description:
@@ -55,8 +65,16 @@ const RESPONSE_SCHEMA = {
       enum: ["soft", "intense"],
     },
   },
-  required: ["title", "script_body", "seo_description", "hashtags", "tone"],
-  propertyOrdering: ["title", "script_body", "seo_description", "hashtags", "tone"],
+  required: ["title", "script_body", "seo_description", "hashtags", "deity", "scene_prompt", "tone"],
+  propertyOrdering: [
+    "title",
+    "script_body",
+    "seo_description",
+    "hashtags",
+    "deity",
+    "scene_prompt",
+    "tone",
+  ],
 };
 
 /** Block anything the provider considers even low-probability harmful. */

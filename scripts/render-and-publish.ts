@@ -11,10 +11,13 @@
  *   fetch the row  ->  download the narration  ->  build word-timed captions
  *   ->  FFmpeg composite  ->  YouTube resumable upload  ->  report back
  *
- * Backgrounds: drop any .jpg/.png files into assets/backgrounds/ and one is
- * picked at random with a slow Ken Burns push. With none present, FFmpeg
- * generates an animated gradient, so the pipeline needs no binary assets at
- * all and stays at zero cost.
+ * Backgrounds: file 1080x1920 .jpg/.png art under assets/backgrounds/<god>/ —
+ * shiva, vishnu, krishna, devi and the rest — and the renderer picks one of
+ * the god this episode is actually about, with a slow Ken Burns push. Loose
+ * files directly in assets/backgrounds/ are the fallback for a god nothing is
+ * filed under, and with the whole tree empty FFmpeg generates an animated
+ * gradient, so the pipeline needs no binary assets at all and stays at zero
+ * cost. See src/lib/render/deity.ts for the folder names.
  */
 
 import "dotenv/config";
@@ -27,6 +30,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { loadConfig, type AppConfig } from "../src/lib/settings/config";
 import { uploadAudio } from "../src/lib/supabase/admin";
 import { contentTypeFor, extensionFor, speak } from "../src/lib/tts";
+import { deityFolder } from "../src/lib/render/deity";
 import { normaliseTone } from "../src/lib/tts/voice";
 import type { SpiritualVideo } from "../src/lib/types";
 
@@ -147,13 +151,35 @@ function probeDuration(file: string): number {
   return seconds;
 }
 
-function pickBackground(): string | null {
-  if (!existsSync(BACKGROUND_DIR)) return null;
-  const files = readdirSync(BACKGROUND_DIR).filter((name) =>
-    /\.(jpe?g|png|webp)$/i.test(name),
-  );
-  if (files.length === 0) return null;
-  return join(BACKGROUND_DIR, files[Math.floor(Math.random() * files.length)]);
+function imagesIn(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((name) => /\.(jpe?g|png|webp)$/i.test(name))
+    .map((name) => join(dir, name));
+}
+
+/**
+ * The background for this episode, preferring art of the god it is about.
+ *
+ * Looked up in assets/backgrounds/<deity>/ first, then the flat folder, then
+ * nothing — which leaves FFmpeg to generate its gradient, and keeps the
+ * pipeline working with no binary assets at all.
+ *
+ * The folder name comes from a closed list, never straight from the model, so
+ * it cannot become a path that walks out of the backgrounds directory.
+ */
+function pickBackground(folder: string): { file: string | null; matched: boolean } {
+  const specific = imagesIn(join(BACKGROUND_DIR, folder));
+  if (specific.length > 0) {
+    return { file: specific[Math.floor(Math.random() * specific.length)], matched: true };
+  }
+
+  const generic = imagesIn(BACKGROUND_DIR);
+  if (generic.length > 0) {
+    return { file: generic[Math.floor(Math.random() * generic.length)], matched: false };
+  }
+
+  return { file: null, matched: false };
 }
 
 /** libass style. Big, heavy, high-contrast — readable on a phone in daylight. */
@@ -408,7 +434,18 @@ async function main(): Promise<void> {
     );
 
     // ---- 5. composite ----
-    const background = pickBackground();
+    //
+    // The god the episode is about decides what is behind it. Which is only
+    // as good as what is filed under assets/backgrounds/<god>/ — with nothing
+    // there, this still lands on the generated gradient, and the log says so
+    // rather than leaving you to wonder why every video looks the same.
+    const folder = deityFolder(video.deity, video.scripture);
+    const { file: background, matched } = pickBackground(folder);
+    console.log(
+      background
+        ? `  background: ${matched ? `${folder} — matched the episode` : "generic (no art filed under " + folder + ")"}`
+        : `  background: generated gradient — nothing in assets/backgrounds/${folder}/ or the folder above it`,
+    );
     const footer = escapeDrawText(
       [video.scripture, video.reference].filter(Boolean).join(" · "),
     );
@@ -447,7 +484,6 @@ async function main(): Promise<void> {
     const args: string[] = ["-y", "-hide_banner", "-loglevel", "error"];
 
     if (background) {
-      console.log(`  background: ${background}`);
       const zoomFrames = Math.ceil(duration * FPS);
       args.push(
         "-loop", "1",
@@ -463,7 +499,6 @@ async function main(): Promise<void> {
           "[v]",
       );
     } else {
-      console.log("  background: generated gradient (no images in assets/backgrounds)");
       args.push(
         "-f", "lavfi",
         "-i",

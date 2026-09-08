@@ -194,9 +194,13 @@ export function validateScript(script: GeneratedScript, cfg: AppConfig): Validat
       script_body: body,
       seo_description: description,
       hashtags,
-      // Carried through untouched: the register is the model's judgement about
-      // the episode, and nothing in this file cleans or contradicts it.
+      // Carried through untouched: the register, the deity and the scene are
+      // the model's judgement about the episode, and nothing in this file
+      // cleans or contradicts them. A bad deity name costs a generic
+      // background, not a rejected script — deityFolder() has the floor.
       tone: normaliseTone(script.tone),
+      deity: (script.deity ?? "").trim().slice(0, 60),
+      scene_prompt: (script.scene_prompt ?? "").trim().slice(0, 600),
     },
     wordCount,
   };

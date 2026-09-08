@@ -17,6 +17,15 @@
 --    nullable, so nothing here has to change for that — this comment is the
 --    record of why they are now empty for a while.
 --
+-- 3. `deity` and `scene_prompt` — what is on the screen.
+--    The renderer picked a background at random out of one flat folder, and
+--    that folder is empty, so every video so far has been an abstract animated
+--    gradient with captions over it: a retelling of Shiva swallowing the poison
+--    looked exactly like a retelling of Krishna teaching Uddhava. The model now
+--    names the figure the episode centres on, so backgrounds can be filed per
+--    god and the right one appears; and it writes one sentence describing the
+--    image the episode wants, which is what you hand to whatever renders it.
+--
 -- Safe to paste into the Supabase SQL editor more than once.
 
 alter table public.spiritual_videos
@@ -36,6 +45,18 @@ begin
       add constraint spiritual_videos_tone_check check (tone in ('soft', 'intense'));
   end if;
 end $$;
+
+alter table public.spiritual_videos
+  add column if not exists deity text;
+
+alter table public.spiritual_videos
+  add column if not exists scene_prompt text;
+
+comment on column public.spiritual_videos.deity is
+  'The god or figure the episode centres on. Chooses assets/backgrounds/<folder>.';
+
+comment on column public.spiritual_videos.scene_prompt is
+  'One sentence describing the image this episode should show, as a render prompt.';
 
 -- The queue asks for "approved rows that still have no audio" on every render,
 -- and for "ready to post" on every tick.

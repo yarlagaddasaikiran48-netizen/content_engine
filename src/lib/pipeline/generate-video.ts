@@ -346,6 +346,8 @@ export async function generateVideo(): Promise<GenerationOutcome> {
           duration_seconds: estimatedSeconds,
           word_count: validation.wordCount,
           tone: script.tone,
+          deity: script.deity,
+          scene_prompt: script.scene_prompt,
           model: config.geminiModel,
           target_seconds: config.targetSeconds,
           expires_at: new Date(Date.now() + config.rejectTtlHours * 3_600_000).toISOString(),

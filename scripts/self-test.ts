@@ -46,6 +46,8 @@ const SAMPLE = {
     "when you have been pushed aside. Vishnu Purana, Book 1, Chapters 11 to 12.",
   hashtags: ["#Dhruva", "#VishnuPurana", "#Spirituality", "#Bhakti", "#Sanatan"],
       tone: "soft" as const,
+      deity: "Shiva",
+      scene_prompt: "Shiva seated in the snow, photorealistic CGI.",
 };
 
 async function main(): Promise<void> {
