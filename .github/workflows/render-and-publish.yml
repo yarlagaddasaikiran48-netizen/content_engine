@@ -90,8 +90,17 @@ jobs:
         run: |
           sudo apt-get update -qq || sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg fontconfig
+          # Stop at the first one that installs. Without the break this asked
+          # for every candidate in turn, and the second of them — fonts-noto —
+          # is the metapackage for every Noto family there is: hundreds of
+          # megabytes of Chinese, Japanese, Korean and emoji faces, downloaded
+          # and unpacked on every render, to burn one Telugu caption.
           for pkg in fonts-noto-core fonts-noto fonts-telu fonts-lohit-telu; do
-            sudo apt-get install -y -qq "$pkg" && echo "installed $pkg" || echo "no $pkg on this release, trying the next"
+            if sudo apt-get install -y -qq "$pkg"; then
+              echo "installed $pkg"
+              break
+            fi
+            echo "no $pkg on this release, trying the next"
           done
           fc-cache -f
           if ! fc-list | grep -qi "noto sans telugu"; then
