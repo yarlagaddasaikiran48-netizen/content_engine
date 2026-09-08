@@ -12,37 +12,52 @@
  * the table the tick already uses to stop itself overlapping: same shape, same
  * self-expiry, and no migration to run from a phone.
  *
- * The lease is held per key **and per purpose**, for two separate reasons.
- * Per key, because the engine may now hold several and one spent project says
- * nothing about another. Per purpose, because Google meters each model
- * separately: exhausting the TTS preview model must not stand the same key
- * down for writing scripts, which is the far cheaper and far more important
- * call. Conflating the two would let a spent voice quota stop the engine
- * writing anything at all — and the voice already has a free fallback in Edge,
- * so it is precisely the one that must not be allowed to block.
+ * The lease is held per **model**, per **key** and per **purpose**, because
+ * Google meters all three separately and each distinction buys real capacity:
+ *
+ *  - Per model, because gemini-3.6-flash allows 20 requests a day while
+ *    gemini-3.1-flash-lite allows 500 on the very same key. Exhausting the
+ *    good model says nothing at all about the cheap one.
+ *  - Per key, because a key from another Google account is another project
+ *    and another whole budget.
+ *  - Per purpose, because the TTS preview model allows 10 a day where text
+ *    allows 20. Conflating them would let a spent voice quota stop the engine
+ *    writing scripts — the expensive thing to lose, and the one without a free
+ *    fallback underneath it. Voice already falls through to Edge.
  */
 
 import { keyFingerprint } from "@/lib/gemini/keys";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
-/** Which meter ran out. Each gets its own lease per key. */
+/** Which meter ran out. Each gets its own lease per model and key. */
 export type QuotaPurpose = "text" | "tts";
 
-export function cooldownLockName(purpose: QuotaPurpose, key: string): string {
-  return `gemini-quota:${purpose}:${keyFingerprint(key)}`;
+/** One thing the engine can spend: this model, on this key. */
+export interface GeminiTarget {
+  key: string;
+  model: string;
 }
 
-export interface KeySurvey {
-  /** Keys worth trying right now, in the order given. */
-  free: string[];
-  /** Seconds until the earliest cooling key frees up; 0 when one is free now. */
+/**
+ * The model is written in plain: it is not a secret, and a lock row naming
+ * `gemini-quota:text:gemini-3.6-flash:a1b2c3d4` tells the operator exactly
+ * what ran out when they read the table from a phone. The key never is.
+ */
+export function cooldownLockName(purpose: QuotaPurpose, target: GeminiTarget): string {
+  return `gemini-quota:${purpose}:${target.model}:${keyFingerprint(target.key)}`;
+}
+
+export interface TargetSurvey {
+  /** Targets worth trying right now, in the order given. */
+  free: GeminiTarget[];
+  /** Seconds until the earliest cooling target frees up; 0 when one is free now. */
   soonest: number;
 }
 
 /**
- * Which of these keys is worth asking, and how long until one is.
+ * Which of these model/key pairs is worth asking, and how long until one is.
  *
- * One query for every key rather than one per key: the tick runs on a
+ * One query for every target rather than one per target: the tick runs on a
  * serverless function with a sixty-second budget that it also has to render
  * and publish inside.
  *
@@ -51,13 +66,13 @@ export interface KeySurvey {
  * refused request, and the worst case of guessing "blocked" is an engine that
  * has quietly stopped writing.
  */
-export async function surveyKeys(
+export async function surveyTargets(
   purpose: QuotaPurpose,
-  keys: readonly string[],
-): Promise<KeySurvey> {
-  if (keys.length === 0) return { free: [], soonest: 0 };
+  targets: readonly GeminiTarget[],
+): Promise<TargetSurvey> {
+  if (targets.length === 0) return { free: [], soonest: 0 };
 
-  const names = keys.map((key) => cooldownLockName(purpose, key));
+  const names = targets.map((target) => cooldownLockName(purpose, target));
 
   let held: Map<string, number>;
   try {
@@ -66,7 +81,7 @@ export async function surveyKeys(
       .select("name, locked_until")
       .in("name", names);
 
-    if (error) return { free: [...keys], soonest: 0 };
+    if (error) return { free: [...targets], soonest: 0 };
 
     held = new Map(
       ((data ?? []) as Array<{ name: string; locked_until: string | null }>).flatMap((row) => {
@@ -76,19 +91,19 @@ export async function surveyKeys(
       }),
     );
   } catch {
-    return { free: [...keys], soonest: 0 };
+    return { free: [...targets], soonest: 0 };
   }
 
-  const free = keys.filter((key) => !held.has(cooldownLockName(purpose, key)));
+  const free = targets.filter((target) => !held.has(cooldownLockName(purpose, target)));
   const soonest = free.length > 0 ? 0 : Math.min(...held.values());
 
-  return { free, soonest };
+  return { free: [...free], soonest };
 }
 
-/** Stand this one key down for this purpose. Never throws, for the same reason. */
+/** Stand this one model, on this one key, down. Never throws, for the same reason. */
 export async function startQuotaCooldown(
   purpose: QuotaPurpose,
-  key: string,
+  target: GeminiTarget,
   seconds: number,
 ): Promise<void> {
   try {
@@ -96,7 +111,7 @@ export async function startQuotaCooldown(
       .from("system_lock")
       .upsert(
         {
-          name: cooldownLockName(purpose, key),
+          name: cooldownLockName(purpose, target),
           locked_until: new Date(Date.now() + seconds * 1_000).toISOString(),
           updated_at: new Date().toISOString(),
         },

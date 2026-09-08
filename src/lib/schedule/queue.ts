@@ -6,7 +6,8 @@
  * directly for its server render.
  */
 
-import { describeCooldown, surveyKeys } from "@/lib/pipeline/cooldown";
+import { buildTargets } from "@/lib/gemini/rotate";
+import { describeCooldown, surveyTargets } from "@/lib/pipeline/cooldown";
 import { projectSchedule } from "@/lib/schedule/slots";
 import { loadConfig } from "@/lib/settings/config";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -66,12 +67,12 @@ export async function readQueue(): Promise<QueueData> {
     postingTimes: cfg.postingTimes,
     timezone: cfg.postingTimezone,
     videosPerDay: cfg.videosPerDay,
-    quota: await quotaState(cfg.geminiApiKeys),
+    quota: await quotaState(cfg.geminiApiKeys, cfg.geminiModels),
   };
 }
 
 /** Null while at least one key can still be spent — there is nothing to report. */
-async function quotaState(keys: string[]): Promise<QueueData["quota"]> {
+async function quotaState(keys: string[], models: string[]): Promise<QueueData["quota"]> {
   if (keys.length === 0) {
     return {
       keys: 0,
@@ -81,17 +82,20 @@ async function quotaState(keys: string[]): Promise<QueueData["quota"]> {
     };
   }
 
-  const { free, soonest } = await surveyKeys("text", keys);
+  const targets = buildTargets(keys, models);
+  const { free, soonest } = await surveyTargets("text", targets);
   if (free.length > 0) return null;
 
   return {
-    keys: keys.length,
+    keys: targets.length,
     free: 0,
     waitSeconds: soonest,
     message:
-      keys.length === 1
-        ? `Your Gemini key is out of quota for today. Writing resumes in ${describeCooldown(soonest)}. Adding a second key from a different Google account in Settings would keep it going.`
-        : `All ${keys.length} Gemini keys are out of quota. Writing resumes in ${describeCooldown(soonest)}.`,
+      `All ${models.length} models on ${keys.length === 1 ? "your key" : `all ${keys.length} keys`} are out of quota. ` +
+      `Writing resumes in ${describeCooldown(soonest)}.` +
+      (keys.length === 1
+        ? " A key from a different Google account, added in Settings, gets its own copy of every model."
+        : ""),
   };
 }
 

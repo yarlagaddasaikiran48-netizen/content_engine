@@ -1,6 +1,7 @@
 import { fail, messageOf, ok } from "@/lib/api";
 import { dispatchRender } from "@/lib/github/dispatch";
-import { describeCooldown, surveyKeys } from "@/lib/pipeline/cooldown";
+import { describeCooldown, surveyTargets } from "@/lib/pipeline/cooldown";
+import { buildTargets } from "@/lib/gemini/rotate";
 import { generateVideo } from "@/lib/pipeline/generate-video";
 import { dueSlot, orderedSlots, slotMinutes, zonedDateKey, zonedParts } from "@/lib/schedule/slots";
 import { loadConfig } from "@/lib/settings/config";
@@ -330,16 +331,18 @@ async function topUpBatch(
     return;
   }
 
-  // Only stand down when *every* key is spent. With one key this is the old
-  // behaviour exactly; with a friend's key alongside it, a refusal costs the
-  // rest of the day's scripts nothing.
-  const { free, soonest } = await surveyKeys("text", cfg.geminiApiKeys);
+  // Only stand down when every model on every key is spent. Each model has
+  // its own daily budget on the same key, so the first refusal now costs the
+  // rest of the day's scripts nothing at all.
+  const targets = buildTargets(cfg.geminiApiKeys, cfg.geminiModels);
+  const { free, soonest } = await surveyTargets("text", targets);
   if (free.length === 0) {
     log.push(
-      `generate: all ${cfg.geminiApiKeys.length} Gemini keys are out of quota, waiting ${describeCooldown(soonest)}`,
+      `generate: all ${targets.length} Gemini model/key combinations are out of quota, waiting ${describeCooldown(soonest)}`,
     );
     return;
   }
+  log.push(`generate: ${free.length}/${targets.length} model/key combinations still have quota`);
 
   const result = await generateVideo();
   log.push(
