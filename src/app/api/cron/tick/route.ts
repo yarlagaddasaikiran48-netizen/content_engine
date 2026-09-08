@@ -4,6 +4,8 @@ import { describeCooldown, surveyTargets } from "@/lib/pipeline/cooldown";
 import { buildTargets } from "@/lib/gemini/rotate";
 import { generateVideo } from "@/lib/pipeline/generate-video";
 import { dueSlot, orderedSlots, slotMinutes, zonedDateKey, zonedParts } from "@/lib/schedule/slots";
+import { AnalyticsUnavailable, fetchVideoStats } from "@/lib/youtube/analytics";
+import { saveStats, saveStatsError, videosNeedingStats } from "@/lib/learning/store";
 import { loadConfig } from "@/lib/settings/config";
 import { deleteAudio, supabaseAdmin } from "@/lib/supabase/admin";
 import type { SpiritualVideo } from "@/lib/types";
@@ -24,7 +26,9 @@ export const maxDuration = 60;
  *     at it.
  *  3. Publish, only when auto-publish is on. Off by default, because the point
  *     of the preview is that nothing reaches the channel unwatched.
- *  4. Generate, last, and exactly one script per tick. One script fits
+ *  4. Measure, before generating rather than after, so a script written this
+ *     tick is written against numbers refreshed this tick.
+ *  5. Generate, last, and exactly one script per tick. One script fits
  *     comfortably inside Vercel's 60-second limit where a batch of eight would
  *     not; eight ticks is forty minutes of wall clock, unattended, overnight.
  *
@@ -59,6 +63,7 @@ export async function GET(request: Request) {
     await reapStalledRenders(log);
     await renderAhead(log, cfg);
     await publishDueSlot(log, cfg);
+    await refreshPerformance(log);
     await topUpBatch(log, cfg);
     return ok({ log });
   } catch (error) {
@@ -300,6 +305,64 @@ async function publishDueSlot(
   } catch (err) {
     log.push(`publish: dispatch failed for "${video.title}": ${messageOf(err)}`);
   }
+}
+
+/**
+ * Phase 4 — refresh what the published videos are doing.
+ *
+ * A few per tick, oldest measurement first. Deliberately not all of them: the
+ * whole run has sixty seconds, each video costs two HTTP round trips to
+ * Google, and there is no deadline on this work -- a video measured on the
+ * next tick instead of this one is measured five minutes later, which changes
+ * nothing about a number that lags reality by three days anyway.
+ *
+ * Every failure is caught and written to the row rather than thrown. Analytics
+ * is the least important phase in the tick and must never be the reason a
+ * video does not get published.
+ */
+async function refreshPerformance(log: string[]): Promise<void> {
+  let due: Awaited<ReturnType<typeof videosNeedingStats>>;
+  try {
+    due = await videosNeedingStats(3);
+  } catch (error) {
+    // The columns arrive with migration 005. Until it is run, this phase is
+    // simply absent rather than fatal.
+    log.push(`stats: unavailable (${messageOf(error)})`);
+    return;
+  }
+
+  if (due.length === 0) {
+    log.push("stats: everything measured recently");
+    return;
+  }
+
+  let measured = 0;
+
+  for (const video of due) {
+    if (!video.youtube_video_id) continue;
+    try {
+      const stats = await fetchVideoStats({
+        youtubeVideoId: video.youtube_video_id,
+        publishedAt: new Date(video.published_at),
+        durationSeconds: video.duration_seconds ?? video.target_seconds,
+      });
+      await saveStats(video.id, stats);
+      measured += 1;
+    } catch (error) {
+      await saveStatsError(video.id, messageOf(error)).catch(() => {});
+
+      // A scope problem is true of the whole account, not of this video.
+      // Trying the next two would produce the same 403 and spend the tick
+      // proving it.
+      if (error instanceof AnalyticsUnavailable) {
+        log.push(`stats: ${messageOf(error)}`);
+        return;
+      }
+      log.push(`stats: "${video.title}" failed — ${messageOf(error)}`);
+    }
+  }
+
+  log.push(`stats: refreshed ${measured} of ${due.length}`);
 }
 
 /**

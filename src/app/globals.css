@@ -198,6 +198,20 @@ select {
   border-color: var(--danger);
 }
 
+/* Chips double as filter buttons on Performance, which needs a pressed state.
+   Plain label chips never set this class and are unaffected. */
+.chip.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+@media (prefers-color-scheme: dark) {
+  .chip.is-active {
+    color: #1a1200;
+  }
+}
+
 /* Horizontal chip row that scrolls instead of wrapping or overflowing. */
 .chip-row {
   display: flex;
@@ -324,7 +338,7 @@ audio {
   bottom: 0;
   z-index: 50;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   height: calc(var(--nav-height) + var(--safe-bottom));
   padding-bottom: var(--safe-bottom);
   background: color-mix(in srgb, var(--bg) 92%, transparent);

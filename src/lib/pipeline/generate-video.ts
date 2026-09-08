@@ -28,6 +28,8 @@ import { isFatalGenerationError, isQuotaError, quotaRetrySeconds } from "@/lib/p
 import { generateScript } from "@/lib/gemini/generate";
 import { buildTargets } from "@/lib/gemini/rotate";
 import { buildHookContext } from "@/lib/sources/hook";
+import { buildLearningBrief, renderLearningBrief } from "@/lib/learning/insights";
+import { readPerformance } from "@/lib/learning/store";
 import { fetchGitaVerse } from "@/lib/sources/gita";
 import { rotationFrom } from "@/lib/sources/mahapuranas";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -187,6 +189,33 @@ async function fetchRecentTitles(limit = 25): Promise<string[]> {
   return (data ?? []).map((row) => row.title as string);
 }
 
+/**
+ * What the channel's own numbers say, as prose for the prompt.
+ *
+ * Returns null in three cases that are deliberately indistinguishable to the
+ * caller: learning is switched off, migration 005 has not been run, or there
+ * are not yet enough measured videos to have a finding. All three mean the
+ * same thing to the writer -- write from the craft rules alone -- and none of
+ * them is a reason to fail a generation.
+ */
+async function loadLearningBrief(
+  config: AppConfig,
+  log: string[],
+): Promise<string | null> {
+  if (!config.learningEnabled) return null;
+
+  try {
+    const brief = renderLearningBrief(buildLearningBrief(await readPerformance()));
+    if (brief) log.push("Writing against the channel's own retention data.");
+    return brief;
+  } catch (error) {
+    log.push(
+      `No performance data to learn from yet (${error instanceof Error ? error.message : String(error)}).`,
+    );
+    return null;
+  }
+}
+
 /** Layer 3: how close is this to anything we have already made? */
 async function similarityAgainstHistory(body: string): Promise<number> {
   const { data, error } = await supabaseAdmin().rpc("max_script_similarity", {
@@ -211,6 +240,7 @@ export async function generateVideo(): Promise<GenerationOutcome> {
   if (hook.trends.length > 0) log.push(`Trends in play: ${hook.trends.join(", ")}`);
 
   const recentTitles = await fetchRecentTitles();
+  const learningBrief = await loadLearningBrief(config, log);
 
   for (let attempt = 1; attempt <= config.maxGenerationAttempts; attempt += 1) {
     let topic: Topic | null = null;
@@ -241,6 +271,7 @@ export async function generateVideo(): Promise<GenerationOutcome> {
           hook,
           recentTitles,
           avoidAngles: rejectedAngles,
+          learningBrief,
         },
         // So "key 1 is out of quota, moving on" reaches the operator rather
         // than dying inside the rotation.

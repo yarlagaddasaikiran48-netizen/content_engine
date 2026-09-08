@@ -22,6 +22,14 @@
  *   "Write modern Telugu" does nothing; a table of verb endings does. Grandhika
  *   forms are what a model reaches for on devotional material, so they are
  *   named and banned explicitly rather than merely discouraged.
+ * - THE FIRST THREE SECONDS is the only section written against measured
+ *   data rather than taste, and it is where the learning loop lands: the
+ *   engine samples audience retention three seconds in and compares openings
+ *   against each other, so the instructions there are the ones a brief from
+ *   lib/learning will later reinforce or contradict with the channel's own
+ *   numbers. It deliberately breaks with general short-form advice on one
+ *   point -- no opening question -- because a rhetorical question is the
+ *   defining cliché of Telugu devotional content and reads as an advert.
  * - The banned-phrase list is doing real work. Those are the exact fillers a
  *   model reaches for when it has nothing specific to say, and each one is a
  *   scroll-away moment.
@@ -69,6 +77,36 @@ English words are allowed ONLY where Telugu has no everyday equivalent — the w
 Sanskrit-derived words are native to Telugu and need no apology. ధర్మం, భక్తి, మోక్షం, తపస్సు are ordinary words to this audience — use them plainly. What you must not do is pile them up into a formal register.
 
 __BEAT_SHEET__
+
+## THE FIRST THREE SECONDS
+
+Between half and sixty per cent of everyone who abandons a Short is gone inside the first three seconds. Not bored later — gone before the second sentence. Every other instruction in this document is about a viewer you have already kept, so this line is worth more than the rest of the script combined, and it is measured directly: the engine reads how many people were still watching at the three-second mark and compares your opening against every opening this channel has published.
+
+What holds them is an open loop: something is already true, and the piece that explains it is missing. The mind will not put down an unfinished sentence. "Death came for him on his sixteenth birthday, exactly as promised" is an open loop — who promised, and why does a boy know the date. "Markandeya was a great devotee of Shiva" is a closed one; there is nothing left to want.
+
+Three shapes make that loop, and all three are statements:
+
+- **A stake already in motion.** Something is being taken, now, from someone named. Not "a king once ruled" but "the king had until sunset to give away the last thing he owned."
+- **A fact that should not be true.** State it flatly and let the contradiction do the work. "The demon had asked for a boon that made him impossible to kill, and it had been granted."
+- **A cost already paid.** Open after the damage. "He had been standing in the river for a thousand years, and his son no longer recognised him."
+
+Do NOT open with a question. This is where general short-form advice and this channel part company: a rhetorical opening question is the single most common devotional-content cliché in Telugu, the audience has heard it ten thousand times, and it reads as an advertisement. The loop is made by a statement with a hole in it, never by asking one.
+
+Three more things about that line, all of them measured:
+
+1. **Short beats long.** Under about eight words, most of the time. The line has to be understood at a glance, not parsed.
+2. **Name someone in it.** A person in trouble is concrete; a concept is not. "A boy", "the king", "his mother" — a body in a situation.
+3. **Start after the beginning.** Whatever you think the first sentence is, the second one is usually the better opening. Setup is not a hook; it is the thing the hook makes them wait for.
+
+Assume it is watched with no sound. Most of them are, on the first pass. The words appear on the screen as captions, so the opening line has to work read as much as heard — which means no line that depends on tone of voice to land.
+
+## HOW IT HAS TO END
+
+A Short that is watched to the end gets shown to more people; one abandoned at eighty per cent does not. The last two seconds are therefore not a place to relax.
+
+End on the image, in the story, at the moment it stops mattering what happens next. Never trail off, never summarise, and never let the final sentence be one the viewer could have predicted from the fourth — a predictable ending is an ending they leave before.
+
+The best last line makes the first line worth hearing again. If someone watching a second time would hear something in your opening that they missed the first time, that is the ending working.
 
 ## THE JOB
 
@@ -145,14 +183,14 @@ hashtags — **ENGLISH**, exactly eight, each one word, each starting with #. Re
 
 ## BEFORE YOU ANSWER
 
-Check six things:
+Check every one of these:
 1. Is script_body written in the Telugu alphabet, start to finish? Any Latin letters left in it, apart from nothing at all, means rewrite.
 2. Read it aloud in your head. Does it sound like a person talking, or like a textbook? Check the verb endings against the table above — వచ్చాడు, not వచ్చెను.
 3. Count the words in script_body. Outside the range, it is rejected automatically — rewrite, do not round.
-4. Read your first line alone. Would it stop your own thumb? If it needs the second line to make sense, it is not a hook.
+4. Read your first line alone, with everything after it covered. Is something already happening to a named person, with a piece missing? Is it under about eight words? Is it a statement rather than a question? If it is setup rather than a hook, delete it and start on the second sentence.
 5. Confirm every fact traces to the supplied passage.
 6. Confirm title, seo_description and hashtags are in English, and that no banned phrase survived in either language.
-7. Read the last sentence of script_body alone. Is it the end of the story, or is it a lesson about the story? If it is a lesson, cut it and end on the story.
+7. Read the last sentence of script_body alone. Is it the end of the story, or is it a lesson about the story? If it is a lesson, cut it and end on the story. Then read the first line straight after it — does the ending give the opening a second meaning?
 8. Read the first line of seo_description alone, as it would appear truncated in a search result. Does it say what happens, using the names? If it teases instead of telling, rewrite it.`;
 
 /**

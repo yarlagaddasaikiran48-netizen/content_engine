@@ -4,10 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 /**
- * Three destinations, fixed to the bottom because that is where a thumb rests
- * on a phone held one-handed. Stats will make a fourth once analytics land; an
- * empty tab that 404s is worse than no tab. Targets are 48px minimum, and the bar clears the
- * iOS home indicator via the --safe-bottom variable.
+ * Four destinations, fixed to the bottom because that is where a thumb rests
+ * on a phone held one-handed. Stats was held back until there was analytics
+ * behind it, on the grounds that an empty tab is worse than no tab; there is
+ * now. Targets are 48px minimum, and the bar clears the iOS home indicator via
+ * the --safe-bottom variable.
  *
  * Approve and publish became separate events, so Queue is not optional: it is
  * the only place to see what the channel is about to post.
@@ -15,6 +16,7 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/", label: "Review", icon: "♡" },
   { href: "/queue", label: "Queue", icon: "≡" },
+  { href: "/performance", label: "Stats", icon: "◔" },
   { href: "/settings", label: "Settings", icon: "⚙" },
 ] as const;
 

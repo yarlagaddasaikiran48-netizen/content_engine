@@ -29,6 +29,13 @@ export interface PromptInput {
   recentTitles: string[];
   /** Angles already tried in this run and rejected as too similar. */
   avoidAngles?: string[];
+  /**
+   * What the channel's own published videos say works, already rendered as
+   * prose by lib/learning. Null until there is enough measured work to have
+   * an opinion, and null is not the same as an empty section: an empty "what
+   * works" heading reads to a model as "nothing works".
+   */
+  learningBrief?: string | null;
   /** Runtime configuration: drives the word window and the target length. */
   cfg: AppConfig;
 }
@@ -38,6 +45,7 @@ export function buildPrompt({
   hook,
   recentTitles,
   avoidAngles = [],
+  learningBrief = null,
   cfg,
 }: PromptInput): string {
   const { min: MIN_WORDS, max: MAX_WORDS } = wordWindow(cfg);
@@ -90,6 +98,10 @@ ${recentTitles.map((title) => `- ${title}`).join("\n")}`);
 ${avoidAngles.map((angle) => `- ${angle}`).join("\n")}`);
   }
 
+  // Last, because it is guidance rather than material, and because the model
+  // weights the end of a long prompt more heavily than its middle.
+  if (learningBrief) sections.push(learningBrief);
+
   sections.push(`YOUR TASK
 Write the script for this passage. The narration must be between ${MIN_WORDS} and ${MAX_WORDS} words — that is ${cfg.targetSeconds} seconds of speech, and it will be rejected outside that range. Count your words before answering.
 
@@ -97,7 +109,10 @@ Return JSON with exactly these fields:
   title           — the YouTube title
   script_body     — the narration, spoken aloud word for word
   seo_description — the YouTube description
-  hashtags        — an array of exactly 5 strings, each starting with #`);
+  hashtags        — an array of exactly 8 strings, each starting with #
+  tone            — "soft" or "intense"
+  deity           — the one figure this episode is about
+  scene_prompt    — one sentence describing the image it should show`);
 
   return sections.join("\n\n");
 }

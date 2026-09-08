@@ -71,7 +71,8 @@ before it is ever stored or spoken.
 │   │   ├── sources/{gita,puranas,mahapuranas,panchang,trending,hook}.ts
 │   │   ├── safety/{profanity,validate}.ts
 │   │   ├── dedupe/hash.ts
-│   │   ├── youtube/{oauth,upload}.ts    resumable upload, no googleapis
+│   │   ├── youtube/{oauth,upload,analytics}.ts  upload + retention, no googleapis
+│   ├── learning/{insights,store}.ts what the channel's own numbers say
 │   │   ├── github/dispatch.ts
 │   │   ├── supabase/{admin,client}.ts
 │   │   └── pipeline/generate-video.ts   the orchestrator
@@ -116,8 +117,10 @@ npm run selftest        # 29 checks, needs no credentials
    and the public `spiritual-audio` storage bucket.
 3. Run each file in `supabase/migrations/` in order, in the same editor.
    `001_settings_and_scheduling.sql` adds the encrypted settings table, the
-   scheduler lock and the publish-queue columns. Every migration is idempotent
-   and safe to re-run.
+   scheduler lock and the publish-queue columns; `005_performance_and_learning.sql`
+   adds the performance columns the Stats tab reads. Every migration is
+   idempotent and safe to re-run — but the SQL editor is transactional, so one
+   error rolls back the whole paste. Run them one file at a time.
 4. **Project Settings → API** — copy into `.env.local`:
    - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
    - `anon` `public` key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
@@ -382,16 +385,62 @@ whether a thumb stops. It is written as constraints and physics rather than as a
 fill-in template, because templates produce identically-shaped scripts, which
 the duplicate detection then rejects.
 
-It covers: who is watching and what they are actually carrying; the
-second-by-second structure of thirty seconds; the rule that every script
-translates one real modern pressure through one ancient story; a banned-phrase
-list (those are the exact fillers a model reaches for when it has nothing
-specific to say); hard safety rails; and a four-point self-check before
-answering.
+It covers: who is watching and what they are actually carrying; the Telugu
+register, taught with a table of verb endings rather than an adjective; the
+beat sheet, computed from the configured length rather than fixed at thirty
+seconds; what the first three seconds have to do and how the ending has to
+close; the rule that the episode is the content, with no bridge to the viewer's
+own week; a banned-phrase list in both languages (those are the exact fillers a
+model reaches for when it has nothing specific to say); hard safety rails; and a
+self-check before answering.
+
+The section on the first three seconds is the only part written against measured
+data rather than taste, and it is where the learning loop lands — see
+**Performance** below.
 
 Nothing about any specific Purana, deity or story is baked into it. The Purana
 of the day, its character, the passage, the Sanskrit and the translation are all
 injected at call time from the ledger.
+
+---
+
+## Performance, and the loop that learns from it
+
+The **Stats** tab is not a YouTube Studio clone. Studio is better at charts and
+is on the same phone. The only thing this page can do that Studio cannot is put
+a video's numbers next to the decisions that produced it — which god, which
+register, which opening line — and then say what the engine has concluded.
+
+Every five minutes the tick refreshes a few published videos from the YouTube
+Analytics API (`src/lib/youtube/analytics.ts`), oldest measurement first, and
+writes the result onto the `published_archive` row. Two reports per video:
+
+- **basic stats** — views, engaged views, likes, comments, shares, subscribers,
+  average view duration and `averageViewPercentage`, the completion proxy.
+- **audience retention** — the curve, sampled at three seconds in. Half of
+  everyone who abandons a Short is gone by then, which makes that one number a
+  direct measurement of the opening line.
+
+`src/lib/learning/insights.ts` turns those rows into a paragraph the writer
+reads before it writes. Three rules govern it, and they are the difference
+between a learning loop and a superstition machine:
+
+1. **Never speak from a small sample.** Nothing is said until six videos have
+   been measured, and no comparison is made unless both sides have at least
+   three videos and the gap is at least six percentage points. A channel that
+   does not yet know says less.
+2. **Never compare raw views.** A video published six weeks ago has had six
+   weeks to collect them. Every conclusion is drawn from a rate.
+3. **Report the gap, not the ranking.** "Shiva does best" is encouragement;
+   "Shiva holds 71%, Vishnu 52%, over nine and seven videos" is checkable.
+
+Switch it off with **Settings → Learn from retention**. The numbers keep being
+collected; they simply stop reaching the prompt.
+
+> The YouTube **Analytics** API is a separate product from the Data API and is
+> enabled separately in Google Cloud. Uploading will work perfectly while every
+> analytics call returns 403. If the Stats page says so, that is the first
+> thing to check.
 
 ---
 
