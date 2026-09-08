@@ -321,15 +321,26 @@ alter table public.topic_ledger     enable row level security;
 alter table public.generation_log   enable row level security;
 
 -- ---------------------------------------------------------------------------
--- 9. Storage bucket for the generated MP3s (public read so the <audio> tag on
---    your phone and the GitHub Actions renderer can both fetch it).
+-- 9. Storage bucket for the narration (public read so the <audio> tag on your
+--    phone and the GitHub Actions renderer can both fetch it).
+--
+--    Both containers are allowed, because there are two speech engines and
+--    they disagree: Edge returns MP3, Gemini returns PCM the engine wraps as
+--    WAV. Allowing only 'audio/mpeg' meant every Gemini narration was refused
+--    by storage the moment Gemini stopped failing — see migration 006.
 -- ---------------------------------------------------------------------------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('spiritual-audio', 'spiritual-audio', true, 26214400, array['audio/mpeg'])
+values (
+  'spiritual-audio',
+  'spiritual-audio',
+  true,
+  52428800,
+  array['audio/mpeg', 'audio/wav', 'audio/x-wav']
+)
 on conflict (id) do update
   set public = true,
-      file_size_limit = 26214400,
-      allowed_mime_types = array['audio/mpeg'];
+      file_size_limit = 52428800,
+      allowed_mime_types = array['audio/mpeg', 'audio/wav', 'audio/x-wav'];
 
 drop policy if exists "spiritual audio public read" on storage.objects;
 create policy "spiritual audio public read"

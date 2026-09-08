@@ -1,6 +1,7 @@
 import { fail, messageOf, ok } from "@/lib/api";
 import { dispatchRender } from "@/lib/github/dispatch";
 import { describeCooldown, surveyTargets } from "@/lib/pipeline/cooldown";
+import { STALE_RENDER_MINUTES } from "@/lib/pipeline/renderable";
 import { buildTargets } from "@/lib/gemini/rotate";
 import { generateVideo } from "@/lib/pipeline/generate-video";
 import { dueSlot, orderedSlots, slotMinutes, zonedDateKey, zonedParts } from "@/lib/schedule/slots";
@@ -142,12 +143,23 @@ async function expire(log: string[], ttlHours: number): Promise<void> {
 /**
  * How long a render may sit in "rendering" before it is presumed dead.
  *
- * The GitHub workflow caps itself at twenty minutes, so anything past thirty
- * has not been slow — it has failed without reaching the callback, or was
- * never picked up at all. That happens: a workflow can fail during checkout or
- * dependency install, before any of our code runs to report it.
+ * A workflow can fail during checkout or dependency install, before any of our
+ * code runs to report it, and the row would otherwise sit on "rendering"
+ * forever.
+ *
+ * This number must always sit ABOVE the workflow's own timeout, or the
+ * watchdog reaps renders that are still legitimately running. It was a
+ * hard-coded thirty against a twenty-minute workflow, which was right until
+ * the renderer started drawing a picture per shot and the workflow ceiling
+ * moved to forty-five — at which point this began killing healthy renders at
+ * the half-hour mark and telling the operator the run had failed.
+ *
+ * So it is no longer its own number. STALE_RENDER_MINUTES is the same
+ * question asked by the queue — "is this render gone?" — and the two must
+ * agree, because one offering Retry while the other still believes the render
+ * is alive is how the same video gets drawn twice.
  */
-const RENDER_TIMEOUT_MINUTES = 30;
+const RENDER_TIMEOUT_MINUTES = STALE_RENDER_MINUTES;
 
 /**
  * Phase 1b — release renders that died without saying so.
