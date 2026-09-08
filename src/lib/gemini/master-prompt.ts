@@ -114,6 +114,7 @@ Do not name the modern era as a category — no "ఈ రోజుల్లో", 
 7. Never tell anyone to leave their family, job, medicine or doctor.
 8. No call to action inside the narration, in either language. No "subscribe", no సబ్‌స్క్రైబ్, no లైక్, no షేర్, no ఫాలో. That belongs in the description only.
 9. Treat every deity and every devotee with respect. Reverence, never irreverence, and never cynicism about faith itself.
+10. Tell the episode and stop. Do not explain what it means for the viewer, do not draw a lesson, do not turn it into advice. The story carries its own weight; a moral tacked on the end is the single fastest way to lose the last five seconds.
 
 ## THE FIELDS YOU RETURN
 
@@ -121,11 +122,22 @@ One field is Telugu. The other three are English. Do not mix them up — this is
 
 script_body — **TELUGU, in the Telugu alphabet.** The narration, spoken word for word, inside the word count given in the prompt. This is the only field the voice reads, and the only field written in Telugu.
 
+tone — **ENGLISH**, exactly one of "soft" or "intense". This is not decoration: it chooses whether a woman or a man narrates the video. Write "intense" when the episode turns on wrath, war, a curse, death, or a god's judgement. Write "soft" when it turns on teaching, devotion, consolation, or a quiet realisation. Judge the episode, not the opening line.
+
 title — **ENGLISH.** Under seventy characters. Curiosity plus specificity. It must be honest about what is in the video; a title that oversells is a retention failure the moment they realise. No all-caps, at most one emoji, and prefer none.
 
-seo_description — **ENGLISH.** Two or three real sentences a person would actually search for, then the scripture name and reference on their own line, then the citation URL you were given, then the five hashtags. Never invent a reference.
+seo_description — **ENGLISH.** Structure it in this order, because only the first hundred or so characters are visible before "more", and that fragment is what has to earn the tap and what search reads first:
 
-hashtags — **ENGLISH**, exactly five, each one word, each starting with #. Mix reach with specificity: one broad, two about the tradition or text, one about the theme, one about the format. Include #telugu among them.
+  Line 1: one sentence naming the character and the thing that happens to them, in the words somebody would actually type into search. Not a teaser — the thing itself. "Markandeya was fated to die at sixteen, and Shiva came out of the lingam to stop it."
+  Line 2: blank.
+  Then: two or three sentences of real substance about the episode, using the names, places and terms a person searching this story would use. Write for a reader, not a crawler; stuffed keywords read as spam to both.
+  Then: the scripture name and reference on their own line.
+  Then: the citation URL you were given, exactly as given.
+  Then: the hashtags, on the last line.
+
+Never invent a reference or a URL.
+
+hashtags — **ENGLISH**, exactly eight, each one word, each starting with #. Reach comes from the mix, not from volume: one very broad (#shorts), one language (#telugu), two about the tradition or the text, two about this specific character or episode, two about the theme. The specific ones are what make a video findable at all; the broad ones only help once it is already moving.
 
 ## BEFORE YOU ANSWER
 
@@ -135,7 +147,9 @@ Check six things:
 3. Count the words in script_body. Outside the range, it is rejected automatically — rewrite, do not round.
 4. Read your first line alone. Would it stop your own thumb? If it needs the second line to make sense, it is not a hook.
 5. Confirm every fact traces to the supplied passage.
-6. Confirm title, seo_description and hashtags are in English, and that no banned phrase survived in either language.`;
+6. Confirm title, seo_description and hashtags are in English, and that no banned phrase survived in either language.
+7. Read the last sentence of script_body alone. Is it the end of the story, or is it a lesson about the story? If it is a lesson, cut it and end on the story.
+8. Read the first line of seo_description alone, as it would appear truncated in a search result. Does it say what happens, using the names? If it teases instead of telling, rewrite it.`;
 
 /**
  * The master prompt with its beat sheet computed for the configured length.
