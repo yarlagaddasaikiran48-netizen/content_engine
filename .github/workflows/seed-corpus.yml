@@ -97,39 +97,50 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           base="${NEXT_PUBLIC_SUPABASE_URL%/}"
-          case "$base" in
-            https://*.supabase.co) echo "URL shape looks right." ;;
-            *) echo "::error::NEXT_PUBLIC_SUPABASE_URL should look like" \
-                    "https://<project>.supabase.co with no trailing slash or path."
-               echo "It is ${#base} characters long and starts with $(printf '%.8s' "$base")."
-               exit 1 ;;
-          esac
 
-          key_len=${#SUPABASE_SERVICE_ROLE_KEY}
-          echo "Service key is $key_len characters."
-          if [ "$key_len" -lt 100 ]; then
-            echo "::error::That is far too short for a service_role key. It is a JWT and" \
-                 "runs to a few hundred characters — check the whole value was pasted."
-            exit 1
-          fi
-
+          # Ask first, judge afterwards. An earlier version of this step checked
+          # the key's length before connecting and rejected anything under a
+          # hundred characters, on the assumption that a service key is always a
+          # JWT. Supabase's newer keys are sb_secret_ strings a third that
+          # length, so the check failed a key that would have worked. The only
+          # authority on whether a credential works is the server.
           code=$(curl -s -o /tmp/probe.json -w "%{http_code}" --max-time 30 \
             "$base/rest/v1/topic_ledger?select=topic_key&limit=1" \
             -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
             -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY")
           echo "GET /rest/v1/topic_ledger -> HTTP $code"
+
+          if [ "$code" = "200" ]; then
+            echo "Credentials work and topic_ledger is readable."
+            exit 0
+          fi
+
+          # Only now, and only to explain the failure. Shapes are reported
+          # without echoing any part of either secret.
+          echo "---- diagnosis ----"
           head -c 400 /tmp/probe.json || true
           echo
+          case "$base" in
+            https://*.supabase.co) echo "url:  shape looks right (${#base} chars)" ;;
+            *) echo "url:  NOT https://<project>.supabase.co — ${#base} chars, no trailing slash or path allowed" ;;
+          esac
+          case "$SUPABASE_SERVICE_ROLE_KEY" in
+            sb_secret_*)      echo "key:  ${#SUPABASE_SERVICE_ROLE_KEY} chars, new-style secret key (correct kind)" ;;
+            eyJ*)             echo "key:  ${#SUPABASE_SERVICE_ROLE_KEY} chars, legacy JWT (correct kind)" ;;
+            sb_publishable_*) echo "key:  ${#SUPABASE_SERVICE_ROLE_KEY} chars, PUBLISHABLE key — this is the wrong one" ;;
+            "")               echo "key:  empty" ;;
+            *)                echo "key:  ${#SUPABASE_SERVICE_ROLE_KEY} chars, unrecognised shape — possibly truncated" ;;
+          esac
 
           case "$code" in
-            200) echo "Credentials work and topic_ledger is readable." ;;
-            401|403) echo "::error::Supabase rejected the key (HTTP $code). SUPABASE_SERVICE_ROLE_KEY" \
-                          "must be the service_role key from Project Settings → API keys, not the anon key." ; exit 1 ;;
+            401|403) echo "::error::Supabase rejected the key (HTTP $code). It must be the secret" \
+                          "service_role key from Project Settings → API keys, not the publishable one." ;;
             404) echo "::error::No topic_ledger table at that project (HTTP 404). Either the URL points" \
-                      "at the wrong project, or supabase/schema.sql was never run in the SQL editor." ; exit 1 ;;
-            000) echo "::error::Could not reach $base at all. Check the project URL." ; exit 1 ;;
-            *) echo "::error::Unexpected HTTP $code from Supabase." ; exit 1 ;;
+                      "at the wrong project, or supabase/schema.sql was never run in the SQL editor." ;;
+            000) echo "::error::Could not reach $base at all. Check the project URL." ;;
+            *) echo "::error::Unexpected HTTP $code from Supabase." ;;
           esac
+          exit 1
 
       - name: Write the curated topics
         env:
