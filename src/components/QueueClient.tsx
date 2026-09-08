@@ -35,6 +35,7 @@ export function QueueClient({ initialVideos, initialStats }: Props) {
   const [confirming, setConfirming] = useState<SpiritualVideo | null>(null);
   const [rejecting, setRejecting] = useState<SpiritualVideo | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [failure, setFailure] = useState<{ message: string; log: string[] } | null>(null);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -99,6 +100,15 @@ export function QueueClient({ initialVideos, initialStats }: Props) {
       const response = await fetch("/api/generate", { method: "POST" });
       const payload = await response.json();
       if (!payload.ok) {
+        // The generator's own message ends with "see the log above", and the
+        // log is right here in the payload — so show it. A toast that clears
+        // itself after five seconds is not a log, and a phone has no console
+        // to fall back to.
+        const lines: string[] = Array.isArray(payload.log) ? payload.log : [];
+        if (lines.length > 0) {
+          setFailure({ message: payload.error ?? "Generation failed.", log: lines });
+          return;
+        }
         throw new Error(payload.error ?? "Generation failed.");
       }
       notify(`Created “${payload.video.title}”`, "success");
@@ -344,6 +354,56 @@ export function QueueClient({ initialVideos, initialStats }: Props) {
               onClick={() => void reject()}
             >
               Reject
+            </button>
+          </div>
+        </Sheet>
+      )}
+
+      {/* ---- why generation failed ---- */}
+      {failure && (
+        <Sheet onClose={() => setFailure(null)} labelledBy="failure-heading">
+          <h2 id="failure-heading" className="text-base font-bold">
+            No script passed the checks
+          </h2>
+          <p className="mt-2 text-sm" style={{ color: "var(--text-muted)" }}>
+            {failure.message}
+          </p>
+          {/* Selectable, not a toast: the reason for each rejected attempt is
+              the one thing worth copying out of this screen. */}
+          <pre
+            className="mt-3 max-h-[45vh] overflow-auto rounded-lg p-3 text-xs"
+            style={{
+              background: "var(--bg-sunken)",
+              border: "1px solid var(--border)",
+              color: "var(--text)",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              userSelect: "text",
+            }}
+          >
+            {failure.log.join("\n")}
+          </pre>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ minHeight: 48 }}
+              onClick={() => {
+                void navigator.clipboard
+                  ?.writeText(failure.log.join("\n"))
+                  .then(() => notify("Log copied.", "success"))
+                  .catch(() => notify("Could not copy — select the text instead.", "error"));
+              }}
+            >
+              Copy log
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ minHeight: 48 }}
+              onClick={() => setFailure(null)}
+            >
+              Close
             </button>
           </div>
         </Sheet>
