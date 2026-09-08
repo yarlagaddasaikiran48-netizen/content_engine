@@ -9,7 +9,9 @@ import {
   assTime,
   buildAss,
   buildCues,
+  gradientSource,
   kenBurns,
+  CAPTION_FONT,
   CAPTION_MARGIN_V,
   CAPTION_SIZE,
   FPS,
@@ -39,7 +41,7 @@ describe("assTime", () => {
 
 describe("buildAss", () => {
   const cues = buildCues(TELUGU, 30);
-  const ass = buildAss(cues);
+  const ass = buildAss({ cues });
 
   it("declares the real frame size, so the font size means pixels", () => {
     expect(ass).toContain(`PlayResX: ${WIDTH}`);
@@ -59,7 +61,7 @@ describe("buildAss", () => {
   });
 
   it("strips braces, which would open an override block mid-sentence", () => {
-    const out = buildAss([{ start: 0, end: 1, text: "a {\\b1}bold trick" }]);
+    const out = buildAss({ cues: [{ start: 0, end: 1, text: "a {\\b1}bold trick" }] });
     const line = out.split("\n").find((l) => l.startsWith("Dialogue:"))!;
     // The fade we put there survives; the one the text tried to smuggle in does not.
     expect(line).toContain("\\fad(140,140)");
@@ -67,8 +69,28 @@ describe("buildAss", () => {
   });
 
   it("keeps every cue on one line, since a stray newline ends the event", () => {
-    const out = buildAss([{ start: 0, end: 1, text: "two\nlines" }]);
+    const out = buildAss({ cues: [{ start: 0, end: 1, text: "two\nlines" }] });
     expect(out.split("\n").filter((l) => l.startsWith("Dialogue:"))).toHaveLength(1);
+  });
+});
+
+describe("gradientSource", () => {
+  it("gives each god its own palette, which is all there is without artwork", () => {
+    // One purple wash sat behind every video ever made, so Shiva in the snow
+    // and Hanuman carrying the mountain came out the same colour.
+    expect(gradientSource("shiva", 60)).not.toBe(gradientSource("devi", 60));
+    expect(gradientSource("yama", 60)).not.toBe(gradientSource("surya", 60));
+  });
+
+  it("falls back to the original wash for anything unrecognised", () => {
+    expect(gradientSource("nonsense", 60)).toBe(gradientSource("general", 60));
+  });
+
+  it("builds a filter FFmpeg can parse", () => {
+    const source = gradientSource("shiva", 60);
+    expect(source).toContain(`size=${WIDTH}x${HEIGHT}`);
+    expect(source).toMatch(/c0=0x[0-9a-f]{6}:c1=0x[0-9a-f]{6}:c2=0x[0-9a-f]{6}:c3=0x[0-9a-f]{6}/);
+    expect(source).toContain("duration=60.00");
   });
 });
 
@@ -129,7 +151,15 @@ describe.skipIf(!ffmpeg)("the filter chain FFmpeg is actually given", () => {
     // which is the half that has historically broken — an unescaped colon, a
     // filter that moved, an expression that parses but divides by zero.
     const duration = 3;
-    writeFileSync(join(work, "captions.ass"), buildAss(buildCues(TELUGU, duration)), "utf8");
+    writeFileSync(
+      join(work, "captions.ass"),
+      buildAss({
+        cues: buildCues(TELUGU, duration),
+        footer: "Shiva Purana · Rudra Samhita",
+        endCard: { text: "సబ్‌స్క్రైబ్ చేయండి", from: duration - 2, to: duration },
+      }),
+      "utf8",
+    );
 
     const output = join(work, "out.mp4");
     execFileSync(

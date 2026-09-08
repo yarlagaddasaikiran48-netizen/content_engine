@@ -34,6 +34,7 @@ import { deityFolder } from "../src/lib/render/deity";
 import {
   buildAss,
   buildCues,
+  gradientSource,
   kenBurns,
   CAPTION_FONT,
   FPS,
@@ -154,9 +155,6 @@ function pickBackground(folder: string): { file: string | null; matched: boolean
   return { file: null, matched: false };
 }
 
-function escapeDrawText(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "");
-}
 
 /**
  * The container the stored narration is actually in.
@@ -383,9 +381,21 @@ async function main(): Promise<void> {
 
     // ---- 4. captions ----
     assertFontPresent(CAPTION_FONT);
+    // Every piece of on-screen text goes through this one file, so it all
+    // resolves through the same font that assertFontPresent just checked.
     writeFileSync(
       captionPath,
-      buildAss(buildCues(video.script_body, audioSeconds)),
+      buildAss({
+        cues: buildCues(video.script_body, audioSeconds),
+        footer: [video.scripture, video.reference].filter(Boolean).join(" · "),
+        endCard: cfg.endCardText.trim()
+          ? {
+              text: cfg.endCardText.trim(),
+              from: Math.max(0, duration - cfg.endCardSeconds),
+              to: duration,
+            }
+          : null,
+      }),
       "utf8",
     );
 
@@ -402,36 +412,15 @@ async function main(): Promise<void> {
         ? `  background: ${matched ? `${folder} — matched the episode` : "generic (no art filed under " + folder + ")"}`
         : `  background: generated gradient — nothing in assets/backgrounds/${folder}/ or the folder above it`,
     );
-    const footer = escapeDrawText(
-      [video.scripture, video.reference].filter(Boolean).join(" · "),
-    );
-
     // Filters are chained the same way for both background sources; only the
     // input differs. Running FFmpeg with cwd=TMP_DIR lets the subtitles filter
     // take a bare filename, which avoids the drive-letter escaping that breaks
     // this filter on Windows.
-    // The subscribe card, held for the last couple of seconds.
-    //
-    // On screen rather than in the narration, deliberately. A spoken "subscribe"
-    // costs words out of a sixty-second budget that is already tight, and it
-    // lands as an ad in the middle of a story — which is why the writing prompt
-    // bans it outright. Drawn over the closing beat it costs nothing and is
-    // still there when the thumb hovers.
-    const endCardFrom = Math.max(0, duration - cfg.endCardSeconds);
-    const endCard = cfg.endCardText.trim();
-
     const commonFilters = [
-      // No force_style: buildAss already declares PlayRes and the full style,
-      // so overriding it here would only be a second place to keep in step.
+      // No force_style: buildAss declares PlayRes and every style itself, and
+      // carries the footer and the subscribe card as well as the captions —
+      // there are no drawtext filters left to disagree with it about fonts.
       "subtitles=captions.ass",
-      footer
-        ? `drawtext=text='${footer}':fontcolor=white@0.72:fontsize=30:x=(w-text_w)/2:y=h-140`
-        : null,
-      endCard
-        ? `drawtext=text='${escapeDrawText(endCard)}':fontcolor=white:fontsize=58:box=1:` +
-          `boxcolor=black@0.55:boxborderw=26:x=(w-text_w)/2:y=(h-text_h)/2:` +
-          `enable='gte(t,${endCardFrom.toFixed(2)})'`
-        : null,
       "vignette=PI/5",
       // A little grain, added last so it sits over the whole composite rather
       // than being smeared by the scaler. It costs a few hundred KB and stops
@@ -465,13 +454,9 @@ async function main(): Promise<void> {
     } else {
       args.push(
         "-f", "lavfi",
-        "-i",
-        // The no-artwork fallback. Slower and softer than it was: a radial
-        // wash this size reads as a screensaver if it moves quickly, and the
-        // point is for it to be unobtrusive behind the words rather than
-        // interesting on its own.
-        `gradients=size=${WIDTH}x${HEIGHT}:c0=0x140a24:c1=0x3d1b3a:c2=0x6d2f26:c3=0x1b1030:` +
-          `n=4:type=radial:speed=0.007:rate=${FPS}:duration=${duration}`,
+        // No artwork for this god, so the palette carries the difference
+        // instead — see gradientSource.
+        "-i", gradientSource(folder, duration),
         "-i", audioFile,
         "-filter_complex", `[0:v]${commonFilters}[v]`,
       );
