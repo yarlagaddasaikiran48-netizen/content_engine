@@ -35,7 +35,13 @@ concurrency:
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Was 20, which was right when the visual was one still. The renderer now
+    # draws a shot per couple of seconds, and the free image tier allows about
+    # two a minute — sixteen shots is roughly eight minutes of deliberate
+    # waiting before FFmpeg starts. Actions minutes are free on a public
+    # repository, so the ceiling costs nothing and only has to be generous
+    # enough that a slow run is not mistaken for a hung one.
+    timeout-minutes: 45
 
     steps:
       # Before anything is checked out or installed. A runner without these

@@ -11,11 +11,15 @@
 /**
  * How long a row may sit on "rendering" before Retry is allowed to take it.
  *
- * The render workflow carries timeout-minutes: 20, so nothing healthy is still
+ * The render workflow carries timeout-minutes: 45, so nothing healthy is still
  * rendering after that. Five minutes on top covers a runner that queued behind
  * something else before it started counting.
+ *
+ * This tracks that timeout and must never sit below it. Set it lower and the
+ * queue offers Retry on a render that is still legitimately running, which
+ * dispatches a second one and draws every image twice.
  */
-export const STALE_RENDER_MINUTES = 25;
+export const STALE_RENDER_MINUTES = 50;
 
 export type Renderable = { ok: true } | { ok: false; reason: string };
 

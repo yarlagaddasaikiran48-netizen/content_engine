@@ -29,7 +29,17 @@ export interface AppConfig {
   geminiModels: string[];
   /** The voice models to spend, best first. Edge answers after all are spent. */
   geminiTtsModels: string[];
+  /** The image models to spend, best first. Metered apart from both of those. */
+  imageModels: string[];
   geminiThinkingBudget: number;
+
+  /** Off falls the renderer back to filed artwork, then to the gradient. */
+  imagesEnabled: boolean;
+  imageSecondsPerShot: number;
+  imageMaxShots: number;
+  /** Milliseconds between image requests — the free tier allows about two a minute. */
+  imagePaceMs: number;
+  imageCrossfadeSeconds: number;
 
   youtubeClientId: string;
   youtubeClientSecret: string;
@@ -171,7 +181,14 @@ export async function loadConfig(): Promise<AppConfig> {
       resolve(rows, "gemini_tts_model"),
       resolve(rows, "gemini_tts_model_fallbacks"),
     ),
+    imageModels: asModelChain(resolve(rows, "image_model"), resolve(rows, "image_model_fallbacks")),
     geminiThinkingBudget: asNumber(rows, "gemini_thinking_budget"),
+
+    imagesEnabled: asBoolean(rows, "images_enabled"),
+    imageSecondsPerShot: asNumber(rows, "image_seconds_per_shot"),
+    imageMaxShots: asNumber(rows, "image_max_shots"),
+    imagePaceMs: asNumber(rows, "image_pace_ms"),
+    imageCrossfadeSeconds: asNumber(rows, "image_crossfade_seconds"),
 
     youtubeClientId: resolve(rows, "youtube_client_id"),
     youtubeClientSecret: resolve(rows, "youtube_client_secret"),

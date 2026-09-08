@@ -30,7 +30,7 @@ import { keyFingerprint } from "@/lib/gemini/keys";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 /** Which meter ran out. Each gets its own lease per model and key. */
-export type QuotaPurpose = "text" | "tts";
+export type QuotaPurpose = "text" | "tts" | "image";
 
 /** One thing the engine can spend: this model, on this key. */
 export interface GeminiTarget {

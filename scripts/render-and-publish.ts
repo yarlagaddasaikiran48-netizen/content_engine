@@ -28,6 +28,13 @@ import { join, resolve } from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { loadConfig, type AppConfig } from "../src/lib/settings/config";
+import { drawShots, planShots } from "../src/lib/images/generate";
+import {
+  planSequence,
+  sequenceFilter,
+  sequenceInputs,
+  shotCountFor,
+} from "../src/lib/render/sequence";
 import { uploadAudio } from "../src/lib/supabase/admin";
 import { contentTypeFor, extensionFor, speak } from "../src/lib/tts";
 import { deityFolder } from "../src/lib/render/deity";
@@ -428,11 +435,53 @@ async function main(): Promise<void> {
     // there, this still lands on the generated gradient, and the log says so
     // rather than leaving you to wonder why every video looks the same.
     const folder = deityFolder(video.deity, video.scripture);
-    const { file: background, matched } = pickBackground(folder);
+
+    // ---- 5a. draw the episode ----
+    //
+    // Ahead of picking a filed background, because a drawn shot list beats
+    // both of the fallbacks and the fallbacks are what run when it fails.
+    // Nothing in here throws: drawShots returns what it managed to make, and
+    // an empty array simply means the old path runs.
+    const shotLog: string[] = [];
+    const wantedShots = shotCountFor(duration, cfg.imageSecondsPerShot, cfg.imageMaxShots);
+    let stills: string[] = [];
+
+    if (cfg.imagesEnabled && wantedShots > 0) {
+      console.log(`  drawing ${wantedShots} shot(s) for ${duration.toFixed(1)}s…`);
+      const shots = await planShots(
+        {
+          scriptBody: video.script_body,
+          deity: video.deity,
+          scenePrompt: video.scene_prompt,
+          scripture: video.scripture,
+          reference: video.reference,
+          count: wantedShots,
+        },
+        cfg,
+        shotLog,
+      );
+      const drawn = await drawShots(shots, video.deity, cfg, shotLog);
+      for (const line of shotLog) console.log(line);
+
+      stills = drawn.map((image) => {
+        const name = `shot-${String(image.index).padStart(2, "0")}.${image.mimeType.includes("jpeg") ? "jpg" : "png"}`;
+        writeFileSync(join(TMP_DIR, name), image.bytes);
+        return name;
+      });
+    }
+
+    // Filed artwork and the gradient remain, in that order, for every reason
+    // generation can come up empty: turned off, no key, quota spent, refused.
+    const { file: background, matched } = stills.length > 0
+      ? { file: null as string | null, matched: false }
+      : pickBackground(folder);
+
     console.log(
-      background
-        ? `  background: ${matched ? `${folder} — matched the episode` : "generic (no art filed under " + folder + ")"}`
-        : `  background: generated gradient — nothing in assets/backgrounds/${folder}/ or the folder above it`,
+      stills.length > 0
+        ? `  background: ${stills.length} generated shot(s), crossfaded`
+        : background
+          ? `  background: ${matched ? `${folder} — matched the episode` : "generic (no art filed under " + folder + ")"}`
+          : `  background: generated gradient — nothing in assets/backgrounds/${folder}/ or the folder above it`,
     );
     // Filters are chained the same way for both background sources; only the
     // input differs. Running FFmpeg with cwd=TMP_DIR lets the subtitles filter
@@ -457,7 +506,31 @@ async function main(): Promise<void> {
 
     const args: string[] = ["-y", "-hide_banner", "-loglevel", "error"];
 
-    if (background) {
+    // The grade is applied to whichever visual source won. It was written for
+    // the filed-artwork path and is just as right for a generated one: a touch
+    // down on brightness and up on saturation is what keeps burned-in captions
+    // legible over a bright temple interior.
+    const grade = "eq=brightness=-0.06:saturation=1.12:contrast=1.04";
+
+    if (stills.length > 0) {
+      // One still per shot, each with its own Ken Burns move, dissolving into
+      // the next. See lib/render/sequence.ts for why the segment length is
+      // solved for rather than chosen.
+      const plan = planSequence(stills.length, duration, cfg.imageCrossfadeSeconds);
+      const moves = stills.map(() => kenBurns(plan.segment));
+      console.log(
+        `  sequence: ${plan.count} shot(s), ${plan.segment.toFixed(2)}s each, ` +
+          `${plan.crossfade.toFixed(2)}s dissolves`,
+      );
+      args.push(
+        ...sequenceInputs(stills, plan.segment),
+        "-i", audioFile,
+        "-filter_complex",
+        `${sequenceFilter(plan, moves)};[seq]${grade},${commonFilters}[v]`,
+      );
+      // The audio is the input after every still.
+      args.push("-map", "[v]", "-map", `${stills.length}:a`);
+    } else if (background) {
       args.push(
         "-loop", "1",
         "-i", background,
@@ -484,9 +557,11 @@ async function main(): Promise<void> {
       );
     }
 
+    if (stills.length === 0) {
+      args.push("-map", "[v]", "-map", "1:a");
+    }
+
     args.push(
-      "-map", "[v]",
-      "-map", "1:a",
       "-t", String(duration),
       "-c:v", "libx264",
       "-preset", "medium",

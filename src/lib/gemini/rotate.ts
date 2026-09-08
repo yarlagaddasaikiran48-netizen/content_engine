@@ -145,7 +145,7 @@ export async function withGeminiTarget<T>(
   }
   if (models.length === 0) {
     throw new NoGeminiKeyError(
-      `No Gemini ${purpose === "tts" ? "voice" : ""} model is set. Open Settings and add one under Connections.`.replace(
+      `No Gemini ${purpose === "tts" ? "voice" : purpose === "image" ? "image" : ""} model is set. Open Settings and add one under Connections.`.replace(
         /\s+/g,
         " ",
       ),
@@ -154,7 +154,7 @@ export async function withGeminiTarget<T>(
 
   const targets = buildTargets(keys, models);
   const { free, soonest } = await surveyTargets(purpose, targets);
-  const meter = purpose === "tts" ? "voice" : "script";
+  const meter = purpose === "tts" ? "voice" : purpose === "image" ? "image" : "script";
 
   if (free.length === 0) {
     throw new AllTargetsExhaustedError(
