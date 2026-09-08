@@ -35,6 +35,11 @@ export interface AppConfig {
 
   /** Off falls the renderer back to filed artwork, then to the gradient. */
   imagesEnabled: boolean;
+  /** pollinations | cloudflare | gemini — see lib/images/providers.ts. */
+  imageProvider: string;
+  cloudflareAccountId: string;
+  cloudflareApiToken: string;
+  cloudflareImageModel: string;
   imageSecondsPerShot: number;
   imageMaxShots: number;
   /** Milliseconds between image requests — the free tier allows about two a minute. */
@@ -185,6 +190,10 @@ export async function loadConfig(): Promise<AppConfig> {
     geminiThinkingBudget: asNumber(rows, "gemini_thinking_budget"),
 
     imagesEnabled: asBoolean(rows, "images_enabled"),
+    imageProvider: resolve(rows, "image_provider"),
+    cloudflareAccountId: resolve(rows, "cloudflare_account_id"),
+    cloudflareApiToken: resolve(rows, "cloudflare_api_token"),
+    cloudflareImageModel: resolve(rows, "cloudflare_image_model"),
     imageSecondsPerShot: asNumber(rows, "image_seconds_per_shot"),
     imageMaxShots: asNumber(rows, "image_max_shots"),
     imagePaceMs: asNumber(rows, "image_pace_ms"),

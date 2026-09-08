@@ -22,6 +22,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { withGeminiTarget } from "@/lib/gemini/rotate";
 import type { GeminiTarget } from "@/lib/pipeline/cooldown";
 import type { AppConfig } from "@/lib/settings/config";
+import { isQuotaRefusal, paceFor, providerFor } from "@/lib/images/providers";
 import {
   buildShotListPrompt,
   decorateShot,
@@ -94,24 +95,6 @@ export async function planShots(
   }
 }
 
-/** Pull the first inline image out of a generateContent response. */
-export function imageFromResponse(response: unknown): { bytes: Buffer; mimeType: string } {
-  const parts =
-    (response as { candidates?: Array<{ content?: { parts?: unknown[] } }> })?.candidates?.[0]
-      ?.content?.parts ?? [];
-
-  for (const part of parts) {
-    const inline = (part as { inlineData?: { data?: string; mimeType?: string } })?.inlineData;
-    if (inline?.data) {
-      return {
-        bytes: Buffer.from(inline.data, "base64"),
-        mimeType: inline.mimeType ?? "image/png",
-      };
-    }
-  }
-  throw new Error("The image model returned no image — only text.");
-}
-
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -131,38 +114,41 @@ export async function drawShots(
     log.push("  images: turned off in Settings; using filed artwork or the gradient.");
     return [];
   }
-  if (cfg.geminiApiKeys.length === 0 || cfg.imageModels.length === 0) {
-    log.push("  images: no Gemini key or image model configured; skipping generation.");
-    return [];
-  }
+
+  const provider = providerFor(cfg.imageProvider);
+  const pace = paceFor(provider, cfg.imagePaceMs);
+  log.push(`  images: drawing with ${provider.name}, ${pace}ms apart.`);
 
   const out: GeneratedImage[] = [];
 
   for (let i = 0; i < shots.length; i++) {
     // Before the request rather than after it, so a failure still pays the
-    // spacing — a 429 that is retried immediately earns another 429.
-    if (i > 0 && cfg.imagePaceMs > 0) await sleep(cfg.imagePaceMs);
+    // spacing — a 429 retried immediately earns another 429.
+    if (i > 0 && pace > 0) await sleep(pace);
 
     const prompt = decorateShot(shots[i], deity);
     try {
-      const image = await withGeminiTarget(
-        "image",
-        cfg.geminiApiKeys,
-        cfg.imageModels,
-        async (target: GeminiTarget) => {
-          const response = await new GoogleGenAI({ apiKey: target.key }).models.generateContent({
-            model: target.model,
-            contents: prompt,
-          });
-          return imageFromResponse(response);
-        },
-      );
+      // A seed per shot, derived from the position, so a re-render of the same
+      // video is not a completely different film.
+      const image = await provider.draw(prompt, cfg, 1000 + i);
       out.push({ index: i + 1, prompt, bytes: image.bytes, mimeType: image.mimeType });
       log.push(`  image ${i + 1}/${shots.length}: ${(image.bytes.length / 1024).toFixed(0)} KB`);
     } catch (error) {
-      log.push(
-        `  image ${i + 1}/${shots.length}: failed (${(error as Error)?.message ?? "unknown error"}) — skipped.`,
-      );
+      const message = (error as Error)?.message ?? "unknown error";
+
+      // Out of quota is not a failed shot, it is a failed run. The first
+      // version carried on through all fifteen, sleeping between each, and
+      // spent eight minutes discovering fourteen more times what it already
+      // knew. Stop, keep whatever was drawn, and say so once.
+      if (isQuotaRefusal(error)) {
+        log.push(
+          `  image ${i + 1}/${shots.length}: ${provider.name} is out of quota — ` +
+            `stopping here with ${out.length} of ${shots.length} drawn. ${message.slice(0, 300)}`,
+        );
+        break;
+      }
+
+      log.push(`  image ${i + 1}/${shots.length}: failed (${message.slice(0, 200)}) — skipped.`);
     }
   }
 
