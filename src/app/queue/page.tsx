@@ -10,6 +10,7 @@ const EMPTY: QueueData = {
   postingTimes: [],
   timezone: "Asia/Kolkata",
   videosPerDay: 0,
+  quota: null,
 };
 
 export default async function QueuePage() {

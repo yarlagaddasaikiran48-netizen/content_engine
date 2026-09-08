@@ -16,14 +16,40 @@ async function probe(target: Target): Promise<string> {
   const cfg = await loadConfig();
 
   if (target === "gemini") {
-    if (!cfg.geminiApiKey) throw new Error("No Gemini API key saved.");
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(cfg.geminiApiKey)}`,
-      { cache: "no-store" },
+    if (cfg.geminiApiKeys.length === 0) throw new Error("No Gemini API key saved.");
+
+    // Every key, not just the first. A second key exists precisely for the
+    // moment the first is refused, so finding out then that it was mistyped
+    // defeats the point of having added it.
+    const results = await Promise.all(
+      cfg.geminiApiKeys.map(async (key, index) => {
+        const name = `Key ${index + 1}`;
+        try {
+          const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
+            { cache: "no-store" },
+          );
+          if (!response.ok) return `${name}: rejected (HTTP ${response.status})`;
+          const body = (await response.json()) as { models?: unknown[] };
+          return `${name}: works, ${body.models?.length ?? 0} models`;
+        } catch (error) {
+          return `${name}: unreachable (${messageOf(error)})`;
+        }
+      }),
     );
-    if (!response.ok) throw new Error(`Gemini rejected the key (HTTP ${response.status}).`);
-    const body = (await response.json()) as { models?: unknown[] };
-    return `Key works. ${body.models?.length ?? 0} models visible.`;
+
+    const working = results.filter((line) => line.includes("works")).length;
+    if (working === 0) throw new Error(results.join(" · "));
+
+    const summary = `${working} of ${cfg.geminiApiKeys.length} ${cfg.geminiApiKeys.length === 1 ? "key" : "keys"} working.`;
+    // Distinct projects are the only thing that actually adds quota, and this
+    // cannot tell whether two keys share one. Say so rather than imply a
+    // doubling that may not exist.
+    const note =
+      cfg.geminiApiKeys.length > 1
+        ? " Each key adds quota only if it came from a different Google account."
+        : "";
+    return `${summary} ${results.join(" · ")}.${note}`;
   }
 
   if (target === "github") {

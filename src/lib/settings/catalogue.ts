@@ -40,6 +40,31 @@ export const SETTING_DEFS: readonly SettingDef[] = [
     fallback: "",
     help: "From aistudio.google.com. The free tier covers eight scripts a day.",
   },
+  // Google meters the free tier per *project*, not per key, so a second key
+  // cut from this same Google account adds nothing. These two fields are for
+  // keys from somebody else's account — each of those is a separate project
+  // and a separate daily budget. When one is refused the engine moves to the
+  // next instead of standing down for the rest of the day.
+  {
+    key: "gemini_api_key_2",
+    group: "connections",
+    label: "Gemini API key 2 (optional)",
+    kind: "password",
+    secret: true,
+    fallbackEnv: "GEMINI_API_KEY_2",
+    fallback: "",
+    help: "A key from a different Google account — a friend's. Doubles the day's scripts. A second key from your own account does nothing: the quota is per Google project, not per key.",
+  },
+  {
+    key: "gemini_api_key_3",
+    group: "connections",
+    label: "Gemini API key 3 (optional)",
+    kind: "password",
+    secret: true,
+    fallbackEnv: "GEMINI_API_KEY_3",
+    fallback: "",
+    help: "A third account, if you have one. Used only after keys 1 and 2 are both refused.",
+  },
   {
     key: "gemini_model",
     group: "connections",

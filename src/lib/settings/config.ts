@@ -8,11 +8,19 @@
  * existing deployment keeps working unchanged until the first value is saved.
  */
 
+import { usableKeys } from "@/lib/gemini/keys";
 import { effectiveValue, SETTING_DEFS, settingDef } from "@/lib/settings/catalogue";
 import { readRawSettings } from "@/lib/settings/store";
 
 export interface AppConfig {
+  /**
+   * The first key set, or "". Kept because most callers want one key and do
+   * not care that there may be others; anything that spends quota should use
+   * `geminiApiKeys` and rotate.
+   */
   geminiApiKey: string;
+  /** Every key set, in the order Settings lists them, blanks and duplicates dropped. */
+  geminiApiKeys: string[];
   geminiModel: string;
   geminiThinkingBudget: number;
 
@@ -114,9 +122,15 @@ function asTimes(rows: Rows): string[] {
 export async function loadConfig(): Promise<AppConfig> {
   const rows = await readRawSettings();
   const postingTimes = asTimes(rows);
+  const geminiApiKeys = usableKeys([
+    resolve(rows, "gemini_api_key"),
+    resolve(rows, "gemini_api_key_2"),
+    resolve(rows, "gemini_api_key_3"),
+  ]);
 
   return {
-    geminiApiKey: resolve(rows, "gemini_api_key"),
+    geminiApiKey: geminiApiKeys[0] ?? "",
+    geminiApiKeys,
     geminiModel: resolve(rows, "gemini_model"),
     geminiThinkingBudget: asNumber(rows, "gemini_thinking_budget"),
 

@@ -6,6 +6,7 @@
  * directly for its server render.
  */
 
+import { describeCooldown, surveyKeys } from "@/lib/pipeline/cooldown";
 import { projectSchedule } from "@/lib/schedule/slots";
 import { loadConfig } from "@/lib/settings/config";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -24,6 +25,15 @@ export interface QueueData {
   postingTimes: string[];
   timezone: string;
   videosPerDay: number;
+  /**
+   * Why the engine is not writing, when it is not. Null when it is working.
+   *
+   * The tick logs its reasons into a response nobody ever sees — pg_cron calls
+   * it, reads nothing, and discards the body. So a spent quota looked exactly
+   * like a broken engine from the operator's phone: an empty deck, no error,
+   * nothing to act on. This is that log line, surfaced where it is read.
+   */
+  quota: { keys: number; free: number; waitSeconds: number; message: string } | null;
 }
 
 /** Approved rows in publish order, plus anything that failed and needs a look. */
@@ -56,6 +66,32 @@ export async function readQueue(): Promise<QueueData> {
     postingTimes: cfg.postingTimes,
     timezone: cfg.postingTimezone,
     videosPerDay: cfg.videosPerDay,
+    quota: await quotaState(cfg.geminiApiKeys),
+  };
+}
+
+/** Null while at least one key can still be spent — there is nothing to report. */
+async function quotaState(keys: string[]): Promise<QueueData["quota"]> {
+  if (keys.length === 0) {
+    return {
+      keys: 0,
+      free: 0,
+      waitSeconds: 0,
+      message: "No Gemini API key is set, so no scripts are being written. Add one in Settings.",
+    };
+  }
+
+  const { free, soonest } = await surveyKeys("text", keys);
+  if (free.length > 0) return null;
+
+  return {
+    keys: keys.length,
+    free: 0,
+    waitSeconds: soonest,
+    message:
+      keys.length === 1
+        ? `Your Gemini key is out of quota for today. Writing resumes in ${describeCooldown(soonest)}. Adding a second key from a different Google account in Settings would keep it going.`
+        : `All ${keys.length} Gemini keys are out of quota. Writing resumes in ${describeCooldown(soonest)}.`,
   };
 }
 

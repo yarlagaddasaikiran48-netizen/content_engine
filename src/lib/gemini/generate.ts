@@ -17,6 +17,7 @@ import {
 } from "@google/genai";
 
 import { buildPrompt, systemInstruction, type PromptInput } from "@/lib/gemini/prompt";
+import { withGeminiKey } from "@/lib/gemini/rotate";
 import { isQuotaError } from "@/lib/pipeline/fatal";
 import type { GeneratedScript } from "@/lib/types";
 
@@ -123,14 +124,28 @@ function extractText(response: GenerateContentResponse): string {
  * validation failures — that decision belongs to the pipeline, which will pick
  * a different topic instead.
  */
-export async function generateScript(input: PromptInput): Promise<GeneratedScript> {
+export async function generateScript(
+  input: PromptInput,
+  options: { log?: string[] } = {},
+): Promise<GeneratedScript> {
+  // Each key is a separate Google project and therefore a separate daily
+  // budget. Only a quota refusal moves to the next one — see lib/gemini/rotate.
+  return withGeminiKey(
+    "text",
+    input.cfg.geminiApiKeys,
+    (key) => generateWithKey(input, key),
+    options,
+  );
+}
+
+async function generateWithKey(input: PromptInput, apiKey: string): Promise<GeneratedScript> {
   const config = input.cfg;
   const prompt = buildPrompt(input);
   let lastError: unknown;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const response = await ai(config.geminiApiKey).models.generateContent({
+      const response = await ai(apiKey).models.generateContent({
         model: config.geminiModel,
         contents: prompt,
         config: {

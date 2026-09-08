@@ -15,6 +15,7 @@
  * until a viewer does.
  */
 
+import { withGeminiKey } from "@/lib/gemini/rotate";
 import type { AppConfig } from "@/lib/settings/config";
 import { synthesize as synthesizeWithEdge, type SynthesisResult } from "@/lib/tts/edge-tts";
 import { synthesizeWithGemini } from "@/lib/tts/gemini-tts";
@@ -52,17 +53,27 @@ export async function speak(
 ): Promise<SynthesisResult> {
   if (cfg.ttsProvider !== "gemini") return edge(text, cfg);
 
-  if (!cfg.geminiApiKey) {
+  if (cfg.geminiApiKeys.length === 0) {
     options.log?.push("  voice: Gemini is selected but has no API key; used Edge instead.");
     return edge(text, cfg);
   }
 
   try {
-    return await synthesizeWithGemini(text, {
-      apiKey: cfg.geminiApiKey,
-      voice: cfg.ttsGeminiVoice,
-      stylePrompt: cfg.ttsStylePrompt,
-    });
+    // Rotated under "tts" rather than "text": Google meters each model
+    // separately, and a spent voice quota must never stand a key down for
+    // writing scripts — the script is the expensive thing to lose, and the
+    // voice already has Edge underneath it.
+    return await withGeminiKey(
+      "tts",
+      cfg.geminiApiKeys,
+      (apiKey) =>
+        synthesizeWithGemini(text, {
+          apiKey,
+          voice: cfg.ttsGeminiVoice,
+          stylePrompt: cfg.ttsStylePrompt,
+        }),
+      options,
+    );
   } catch (error) {
     // Deliberately not rethrown. A failed narration would throw away a script
     // that already cost a generation, and Edge can still say the words.

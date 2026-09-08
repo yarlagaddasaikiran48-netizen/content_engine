@@ -18,7 +18,7 @@
 
 import { loadConfig, wordWindow, type AppConfig } from "@/lib/settings/config";
 import { contentHash } from "@/lib/dedupe/hash";
-import { describeCooldown, startQuotaCooldown } from "@/lib/pipeline/cooldown";
+import { describeCooldown, surveyKeys } from "@/lib/pipeline/cooldown";
 import { isFatalGenerationError, isQuotaError, quotaRetrySeconds } from "@/lib/pipeline/fatal";
 import { generateScript } from "@/lib/gemini/generate";
 import { buildHookContext } from "@/lib/sources/hook";
@@ -236,13 +236,18 @@ export async function generateVideo(): Promise<GenerationOutcome> {
       log.push(`Attempt ${attempt}: ${topic.scripture} — ${topic.reference} (${topic.title})`);
 
       // ---- 1. write ----
-      const raw = await generateScript({
-        cfg: config,
-        topic,
-        hook,
-        recentTitles,
-        avoidAngles: rejectedAngles,
-      });
+      const raw = await generateScript(
+        {
+          cfg: config,
+          topic,
+          hook,
+          recentTitles,
+          avoidAngles: rejectedAngles,
+        },
+        // So "key 1 is out of quota, moving on" reaches the operator rather
+        // than dying inside the rotation.
+        { log },
+      );
 
       // ---- 2. validate structure + language ----
       const validation = validateScript(raw, config);
@@ -403,22 +408,27 @@ export async function generateVideo(): Promise<GenerationOutcome> {
       await recordAttempt(topic?.topic_key ?? null, attempt, "error", message);
       if (topic) await releaseTopic(topic.topic_key);
 
-      // A spent quota stands the whole engine down. Remembering the refusal
-      // is the point: without it the five-minute tick asks again, and again,
-      // and the budget never gets the chance to roll over.
+      // A spent quota stands the engine down until a key frees up. The
+      // refusal has already been remembered — withGeminiKey records a
+      // cooldown against the individual key that was refused, which is the
+      // only place that knows which one it was. Reaching here means every key
+      // has now been refused, so there is nothing left to try this tick.
       if (isQuotaError(message)) {
-        const wait = quotaRetrySeconds(message);
-        await startQuotaCooldown(wait);
-        const readable = describeCooldown(wait);
-        log.push(`  Gemini quota is spent. Standing down for ${readable}.`);
+        const { soonest } = await surveyKeys("text", config.geminiApiKeys);
+        const readable = describeCooldown(soonest || quotaRetrySeconds(message));
+        const count = config.geminiApiKeys.length;
+        log.push(`  Every Gemini key is spent. Standing down for ${readable}.`);
         return {
           ok: false,
           attempts: attempt,
           log,
           error:
-            `Gemini refused: the API quota is used up. Nothing is wrong with the ` +
-            `scripts — none was written. Waiting ${readable} before trying again. ` +
-            `Raise the limit in Google AI Studio, or lower "scripts per day".`,
+            `Gemini refused: ${count === 1 ? "the API quota is" : `all ${count} keys are`} used up. ` +
+            `Nothing is wrong with the scripts — none was written. Waiting ${readable} before ` +
+            `trying again. ` +
+            (count === 1
+              ? `Adding a second key from a different Google account in Settings would keep it writing.`
+              : `Raise the limit in Google AI Studio, or lower "scripts per day".`),
         };
       }
 

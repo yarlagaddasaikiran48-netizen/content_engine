@@ -26,6 +26,7 @@ export function PublishQueue({ initial, loadError }: { initial: QueueData; loadE
         postingTimes: body.postingTimes,
         timezone: body.timezone,
         videosPerDay: body.videosPerDay,
+        quota: body.quota ?? null,
       });
     }
   }
@@ -165,6 +166,22 @@ export function PublishQueue({ initial, loadError }: { initial: QueueData; loadE
         >
           {note.text}
         </p>
+      )}
+
+      {/* An empty deck with no explanation is indistinguishable from a broken
+          engine. When the reason is a spent quota, say so and say for how long. */}
+      {data.quota && (
+        <div
+          className="card mt-3 p-4"
+          style={{ background: "var(--danger-soft)", borderColor: "var(--danger)" }}
+        >
+          <p className="text-sm font-bold" style={{ color: "var(--danger)" }}>
+            Not writing new scripts
+          </p>
+          <p className="wrap-anywhere mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+            {data.quota.message}
+          </p>
+        </div>
       )}
 
       {data.ready.length > 0 && (
