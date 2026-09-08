@@ -26,6 +26,9 @@ const { buildTargets, withGeminiTarget, AllTargetsExhaustedError, NoGeminiKeyErr
 
 const QUOTA = "429 RESOURCE_EXHAUSTED: quota exceeded";
 const UNKNOWN = "models/made-up is not found for API version v1beta";
+/** Verbatim from production, 2026-09-08: what stopped the engine writing. */
+const OVERLOADED =
+  'Gemini generation failed: {"error":{"code":503,"message":"This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.","status":"UNAVAILABLE"}}';
 
 beforeEach(() => cooled.clear());
 
@@ -180,6 +183,63 @@ describe("withGeminiTarget", () => {
     expect(text).toContain("good");
     expect(text).toContain("out of script quota");
     expect(text).not.toContain("AIzaSy-secret-one");
+  });
+});
+
+describe("a busy model", () => {
+  it("moves to the next model instead of ending the run", async () => {
+    // The failure this was written for: gemini-3.6-flash returned 503 "high
+    // demand" and the walk treated it as fatal, so the engine stopped writing
+    // while six other models sat idle with their whole daily budget intact.
+    const seen: string[] = [];
+    const result = await withGeminiTarget("text", ["k1"], ["good", "cheap"], async (t) => {
+      seen.push(t.model);
+      if (t.model === "good") throw new Error(OVERLOADED);
+      return "script";
+    });
+
+    expect(result).toBe("script");
+    expect(seen).toEqual(["good", "cheap"]);
+  });
+
+  it("stands the busy model down for minutes, not the hour a spent budget earns", async () => {
+    await withGeminiTarget("text", ["k1"], ["good", "cheap"], async (t) => {
+      if (t.model === "good") throw new Error(OVERLOADED);
+      return "script";
+    });
+
+    expect(cooled.get("text:good:k1")).toBe(600);
+  });
+
+  it("reports the overload in its own words when every model is busy", async () => {
+    // Not RESOURCE_EXHAUSTED: saying that would send the operator to the quota
+    // page to look at budgets that are perfectly fine, and would stand the
+    // engine down for an hour over a passing spike.
+    const call = withGeminiTarget("text", ["k1"], ["good", "cheap"], async () => {
+      throw new Error(OVERLOADED);
+    });
+
+    await expect(call).rejects.toThrow(/high demand/i);
+    await expect(call).rejects.not.toThrow(/RESOURCE_EXHAUSTED/);
+  });
+
+  it("still leaves a genuine quota refusal reading as a quota refusal", async () => {
+    const call = withGeminiTarget("text", ["k1"], ["good"], async () => {
+      throw new Error(QUOTA);
+    });
+
+    await expect(call).rejects.toThrow(/RESOURCE_EXHAUSTED/);
+  });
+
+  it("does not treat a blocked prompt as something another model would fix", async () => {
+    const seen: string[] = [];
+    const call = withGeminiTarget("text", ["k1"], ["good", "cheap"], async (t) => {
+      seen.push(t.model);
+      throw new Error("Gemini blocked the prompt (SAFETY).");
+    });
+
+    await expect(call).rejects.toThrow(/blocked the prompt/);
+    expect(seen).toEqual(["good"]);
   });
 });
 

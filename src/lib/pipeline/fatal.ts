@@ -57,6 +57,27 @@ export function isQuotaError(message: string): boolean {
 }
 
 /**
+ * "This model is currently experiencing high demand."
+ *
+ * Distinct from a spent quota, and distinct again from a permanent failure.
+ * Nothing is wrong with the key, the prompt or the budget -- that one model is
+ * busy this minute. Which makes it the one error class where trying a
+ * DIFFERENT model is not just reasonable but likely to work, and where the
+ * rotation's usual reasoning ("anything that is not a quota problem will fail
+ * the same way on the next target") is simply false.
+ *
+ * Observed in production as HTTP 503 / UNAVAILABLE on gemini-3.6-flash while
+ * the rest of the ladder was untouched.
+ */
+export function isOverloadedError(message: string): boolean {
+  return (
+    /UNAVAILABLE/.test(message) ||
+    /\b503\b/.test(message) ||
+    /experiencing high demand|overloaded|try again later/i.test(message)
+  );
+}
+
+/**
  * How long to wait before asking Gemini again.
  *
  * Google states a wait in the error — "Please retry in 46.86s" — but that

@@ -29,9 +29,13 @@
  *
  * Three rules keep the walk from becoming thrashing:
  *
- *  1. Only a *quota* refusal moves on. A blocked prompt or a malformed
- *     response will fail identically everywhere, so continuing would spend a
- *     good budget proving what the first target already established.
+ *  1. Only a *quota* refusal or an *overload* moves on. A blocked prompt or a
+ *     malformed response will fail identically everywhere, so continuing would
+ *     spend a good budget proving what the first target already established.
+ *     An overload is different in kind: "this model is currently experiencing
+ *     high demand" describes one model at one moment, and says nothing about
+ *     the next one down the chain -- so it moves on, and stands the busy model
+ *     down for ten minutes rather than the hour a spent budget earns.
  *  2. A model Google does not recognise is skipped, not fatal. The chain names
  *     models this code cannot verify exist; one wrong name must cost the run
  *     one request, not the whole run.
@@ -47,10 +51,19 @@ import {
   type GeminiTarget,
   type QuotaPurpose,
 } from "@/lib/pipeline/cooldown";
-import { isQuotaError, quotaRetrySeconds } from "@/lib/pipeline/fatal";
+import { isOverloadedError, isQuotaError, quotaRetrySeconds } from "@/lib/pipeline/fatal";
 
 /** A model name Google refuses is worth re-testing tomorrow, not this hour. */
 const UNKNOWN_MODEL_COOLDOWN_SECONDS = 86_400;
+
+/**
+ * A busy model is worth re-testing in minutes, not hours.
+ *
+ * Long enough that the next tick does not walk straight back into the same
+ * overload, short enough that a two-minute spike does not cost the rest of the
+ * day on the best model in the chain.
+ */
+const OVERLOADED_COOLDOWN_SECONDS = 600;
 
 export class NoGeminiKeyError extends Error {
   constructor(message: string) {
@@ -153,6 +166,8 @@ export async function withGeminiTarget<T>(
   }
 
   let lastQuotaError: unknown;
+  /** An overload is not a spent budget, so it is reported in its own words. */
+  let lastTransientError: unknown;
   let unknownModels = 0;
 
   for (const target of free) {
@@ -169,6 +184,21 @@ export async function withGeminiTarget<T>(
         options.log?.push(
           `  gemini: ${describeTarget(target, keys)} is not a model Google recognises; skipping it for a day.`,
         );
+        continue;
+      }
+
+      // An overloaded model is the exception to the rule below. "This model is
+      // currently experiencing high demand" is a statement about one model at
+      // one moment, not about the key, the prompt or the budget -- so the next
+      // model in the chain is genuinely likely to answer. Treating it as fatal
+      // meant a busy gemini-3.6-flash stopped the engine writing while six
+      // other models sat idle with full quota.
+      if (isOverloadedError(message)) {
+        await startQuotaCooldown(purpose, target, OVERLOADED_COOLDOWN_SECONDS);
+        options.log?.push(
+          `  gemini: ${describeTarget(target, keys)} is busy right now; trying the next model and standing it down for ${describeCooldown(OVERLOADED_COOLDOWN_SECONDS)}.`,
+        );
+        lastTransientError = error;
         continue;
       }
 
@@ -193,6 +223,15 @@ export async function withGeminiTarget<T>(
       `Google does not recognise any of the ${meter} models configured ` +
         `(${models.join(", ")}). Correct them in Settings.`,
     );
+  }
+
+  // Every model was busy rather than spent. Saying RESOURCE_EXHAUSTED here
+  // would send the operator to the quota page to look at budgets that are
+  // fine, and would stand the engine down for an hour over a passing spike.
+  if (!lastQuotaError && lastTransientError) {
+    throw lastTransientError instanceof Error
+      ? lastTransientError
+      : new Error(String(lastTransientError));
   }
 
   throw lastQuotaError instanceof Error

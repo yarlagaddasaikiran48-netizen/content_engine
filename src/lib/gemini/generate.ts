@@ -20,7 +20,7 @@ import { buildPrompt, systemInstruction, type PromptInput } from "@/lib/gemini/p
 import { wordWindow, type AppConfig } from "@/lib/settings/config";
 import { withGeminiTarget } from "@/lib/gemini/rotate";
 import type { GeminiTarget } from "@/lib/pipeline/cooldown";
-import { isQuotaError } from "@/lib/pipeline/fatal";
+import { isOverloadedError, isQuotaError } from "@/lib/pipeline/fatal";
 import { normaliseTone } from "@/lib/tts/voice";
 import type { GeneratedScript } from "@/lib/types";
 
@@ -239,11 +239,16 @@ async function generateWithTarget(
       // caller decide how long to stand down.
       if (isQuotaError(message)) break;
 
-      const transient =
-        message.includes("500") ||
-        message.includes("503") ||
-        message.includes("UNAVAILABLE") ||
-        message.includes("fetch failed");
+      // A busy model is now the rotation's business, not this loop's: it
+      // stands the model down and moves to the next one, which is far more
+      // likely to answer than the same model 1.6 seconds later. Retrying it
+      // three times here spent three requests and two and a half seconds of a
+      // sixty-second budget to arrive at the same 503 -- twice, in the run
+      // that produced this comment, using up the time two other models could
+      // have written in.
+      if (isOverloadedError(message)) break;
+
+      const transient = message.includes("500") || message.includes("fetch failed");
 
       if (!transient || attempt === 2) break;
 
