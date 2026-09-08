@@ -1,6 +1,6 @@
 import { fail, messageOf, ok } from "@/lib/api";
 import { dispatchRender } from "@/lib/github/dispatch";
-import { describeCooldown, quotaCooldownRemaining } from "@/lib/pipeline/cooldown";
+import { describeCooldown, surveyKeys } from "@/lib/pipeline/cooldown";
 import { generateVideo } from "@/lib/pipeline/generate-video";
 import { dueSlot, orderedSlots, slotMinutes, zonedDateKey, zonedParts } from "@/lib/schedule/slots";
 import { loadConfig } from "@/lib/settings/config";
@@ -55,6 +55,7 @@ export async function GET(request: Request) {
 
   try {
     await expire(log, cfg.rejectTtlHours);
+    await reapStalledRenders(log);
     await renderAhead(log, cfg);
     await publishDueSlot(log, cfg);
     await topUpBatch(log, cfg);
@@ -101,6 +102,62 @@ async function expire(log: string[], ttlHours: number): Promise<void> {
   }
 
   log.push(`expire: removed ${rows.length}, topics returned to the pool`);
+}
+
+/**
+ * How long a render may sit in "rendering" before it is presumed dead.
+ *
+ * The GitHub workflow caps itself at twenty minutes, so anything past thirty
+ * has not been slow — it has failed without reaching the callback, or was
+ * never picked up at all. That happens: a workflow can fail during checkout or
+ * dependency install, before any of our code runs to report it.
+ */
+const RENDER_TIMEOUT_MINUTES = 30;
+
+/**
+ * Phase 1b — release renders that died without saying so.
+ *
+ * A row is set to "rendering" before the workflow is dispatched and only
+ * leaves that state when the callback arrives. If the run dies first, nothing
+ * ever moves it: the video is not rendered, not failed, and not visible
+ * anywhere except as a status nobody can act on. One such row sat for
+ * nineteen hours, which is what this phase exists to prevent.
+ *
+ * "failed" rather than "approved", deliberately. Failed rows surface on the
+ * Queue with a Retry button, so the operator is told and decides; sending it
+ * straight back to "approved" would re-dispatch a job that may fail for a
+ * reason that never changes, once every tick, forever.
+ */
+async function reapStalledRenders(log: string[]): Promise<void> {
+  const supabase = supabaseAdmin();
+  const deadline = new Date(Date.now() - RENDER_TIMEOUT_MINUTES * 60_000).toISOString();
+
+  const { data, error } = await supabase
+    .from("spiritual_videos")
+    .update({
+      status: "failed",
+      error_message: `The renderer never reported back within ${RENDER_TIMEOUT_MINUTES} minutes. The GitHub run probably failed before it could — check the Actions tab, then Retry.`,
+    })
+    .eq("status", "rendering")
+    .lt("updated_at", deadline)
+    .select("id, title");
+
+  if (error) throw new Error(`Stalled-render sweep failed: ${error.message}`);
+
+  const rows = (data ?? []) as Array<Pick<SpiritualVideo, "id" | "title">>;
+  if (rows.length === 0) {
+    log.push("reap: no stalled renders");
+    return;
+  }
+
+  for (const row of rows) {
+    await supabase.from("generation_log").insert({
+      outcome: "render_timeout",
+      detail: `Stuck in rendering for over ${RENDER_TIMEOUT_MINUTES} minutes: ${row.title}`,
+    });
+  }
+
+  log.push(`reap: ${rows.length} stalled render(s) marked failed and retryable`);
 }
 
 /**
@@ -268,9 +325,19 @@ async function topUpBatch(
   // branch is reached again in five minutes. That is the right behaviour for
   // a script that came out badly and the wrong one for a spent quota, where
   // every retry is refused and counted. Honour the stand-down.
-  const cooling = await quotaCooldownRemaining();
-  if (cooling > 0) {
-    log.push(`generate: Gemini quota spent, waiting ${describeCooldown(cooling)}`);
+  if (cfg.geminiApiKeys.length === 0) {
+    log.push("generate: no Gemini API key set");
+    return;
+  }
+
+  // Only stand down when *every* key is spent. With one key this is the old
+  // behaviour exactly; with a friend's key alongside it, a refusal costs the
+  // rest of the day's scripts nothing.
+  const { free, soonest } = await surveyKeys("text", cfg.geminiApiKeys);
+  if (free.length === 0) {
+    log.push(
+      `generate: all ${cfg.geminiApiKeys.length} Gemini keys are out of quota, waiting ${describeCooldown(soonest)}`,
+    );
     return;
   }
 
