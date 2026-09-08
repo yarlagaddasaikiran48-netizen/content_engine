@@ -20,7 +20,9 @@ on:
 # Never publish the same item twice concurrently. A duplicate upload cannot be
 # undone from here — it becomes a second video on the channel.
 concurrency:
-  group: publish-${{ github.event.client_payload.video_id || inputs.video_id }}
+  # Same collapse the render workflow had: with neither side resolving, every
+  # publish shared the group "publish-" and queued behind the last one.
+  group: publish-${{ github.event.client_payload.video_id || github.event.inputs.video_id || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -88,4 +90,12 @@ jobs:
           # derived from it, and a mismatch decrypts every credential to null.
           SETTINGS_MASTER_KEY: ${{ secrets.SETTINGS_MASTER_KEY }}
           PUBLISH_CALLBACK_SECRET: ${{ secrets.PUBLISH_CALLBACK_SECRET }}
-        run: npx tsx scripts/publish-video.ts --id="$VIDEO_ID" --callback-url="$CALLBACK_URL"
+        # Job logs need admin rights on this repository; annotations do not.
+        # Without this a failed upload reaches the operator as "exit code 1"
+        # and nothing else — the same blindness the render step had.
+        run: |
+          set -o pipefail
+          if ! npx tsx scripts/publish-video.ts --id="$VIDEO_ID" --callback-url="$CALLBACK_URL" 2>&1 | tee /tmp/publish.log; then
+            echo "::error::publish failed: $(tail -c 900 /tmp/publish.log | tr -s '[:space:]' ' ')"
+            exit 1
+          fi
