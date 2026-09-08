@@ -1,8 +1,10 @@
 name: Render and publish
 
 # Fired by the Approve button in the dashboard, via repository_dispatch.
-# This is where FFmpeg runs — GitHub's runners have it preinstalled and give
-# free minutes, which is what keeps the whole pipeline at zero cost.
+# This is where FFmpeg runs. It is installed below rather than assumed: this
+# comment used to say the runners have it preinstalled, and they do not — no
+# Ubuntu runner image has shipped ffmpeg. The free minutes are the real reason
+# the whole pipeline costs nothing.
 on:
   repository_dispatch:
     types: [render-video]
@@ -84,10 +86,10 @@ jobs:
       # for the candidates in order rather than betting the run on one, and
       # let fc-list — not apt's exit code — decide whether we actually got a
       # Telugu font.
-      - name: Install the Telugu caption font
+      - name: Install FFmpeg and the Telugu caption font
         run: |
           sudo apt-get update -qq || sudo apt-get update -qq
-          sudo apt-get install -y -qq fontconfig
+          sudo apt-get install -y -qq ffmpeg fontconfig
           for pkg in fonts-noto-core fonts-noto fonts-telu fonts-lohit-telu; do
             sudo apt-get install -y -qq "$pkg" && echo "installed $pkg" || echo "no $pkg on this release, trying the next"
           done
@@ -99,8 +101,16 @@ jobs:
           fi
           fc-list | grep -i telugu | head -n 5
 
-      - name: Confirm FFmpeg is available
+      # "ffmpeg -version | head -n 1" is not a check. A pipeline exits with the
+      # status of its last command, so head returned 0 and this step passed
+      # green on a runner with no FFmpeg on it at all — the render then died on
+      # "spawnSync ffprobe ENOENT", one layer further in, where the message no
+      # longer named the cause. command -v is the part that actually fails.
+      - name: Confirm FFmpeg is really there
         run: |
+          set -o pipefail
+          command -v ffmpeg
+          command -v ffprobe
           ffmpeg -version | head -n 1
           ffprobe -version | head -n 1
 
