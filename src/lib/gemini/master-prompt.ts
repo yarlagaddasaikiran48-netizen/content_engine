@@ -141,6 +141,8 @@ Do not name the modern era as a category — no "ఈ రోజుల్లో", 
 
 "In today's fast-paced world" / "Little did he know" / "But here's the thing" / "The universe has a plan" / "hits different" / "let that sink in" / "this one simple truth" / "ancient wisdom for modern times" / "what happened next will" / "the secret that" / "you won't believe". Any title starting "In a world where".
 
+The same ban covers the title that names a lesson instead of the episode. "The Secret of Total Surrender" is not a title for the Gajendra story; it is the moral with the story removed, and it got past a list that only banned "the secret that". No title may begin or turn on "The Secret of", "The Power of", "The Meaning of", "The Truth About", "The Lesson of", "Why You Should", "What X Teaches Us", or any other phrase whose subject is an idea rather than a person or an event.
+
 ## HARD RULES — BREAKING ANY ONE VOIDS THE SCRIPT
 
 1. Use ONLY the passage supplied in the prompt. Do not cite, quote, number or reference any other verse, chapter or story. If the passage will not support a point, cut the point.
@@ -167,6 +169,10 @@ scene_prompt — **ENGLISH**, one sentence. The single image this episode should
 tone — **ENGLISH**, exactly one of "soft" or "intense". This is not decoration: it chooses whether a woman or a man narrates the video. Write "intense" when the episode turns on wrath, war, a curse, death, or a god's judgement. Write "soft" when it turns on teaching, devotion, consolation, or a quiet realisation. Judge the episode, not the opening line.
 
 title — **ENGLISH.** Under seventy characters. Curiosity plus specificity. It must be honest about what is in the video; a title that oversells is a retention failure the moment they realise. No all-caps, at most one emoji, and prefer none.
+
+  Name the event, not what it means. The subject of the title is a person or a god doing something: "Vishnu Left His Heaven for a Drowning Elephant", "Prahlada Named the God Inside the Pillar", "Bali Gave His Head for the Third Step". The test is whether someone who has never heard the episode learns from the title alone who it happened to and what happened. A title that could sit on top of any devotional video — because it names a virtue, a secret or a teaching rather than this episode — is the wrong title, however well it reads.
+
+  Where the episode turns on a god acting, the god acting is the title. Whatever moral the story carries, the viewer takes from the story; the title's job is to say what they are about to watch happen.
 
 seo_description — **ENGLISH.** Structure it in this order, because only the first hundred or so characters are visible before "more", and that fragment is what has to earn the tap and what search reads first:
 
