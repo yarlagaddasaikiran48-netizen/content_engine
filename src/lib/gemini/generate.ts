@@ -1,5 +1,5 @@
 /**
- * The brain: Gemini 2.5 Flash, constrained to structured JSON.
+ * The brain: Gemini, constrained to structured JSON.
  *
  * Structured output means the response is schema-valid by construction, so
  * there is no brittle markdown-fence parsing. Safety settings are set to the
@@ -17,8 +17,10 @@ import {
 } from "@google/genai";
 
 import { buildPrompt, systemInstruction, type PromptInput } from "@/lib/gemini/prompt";
-import { withGeminiKey } from "@/lib/gemini/rotate";
+import { withGeminiTarget } from "@/lib/gemini/rotate";
+import type { GeminiTarget } from "@/lib/pipeline/cooldown";
 import { isQuotaError } from "@/lib/pipeline/fatal";
+import { normaliseTone } from "@/lib/tts/voice";
 import type { GeneratedScript } from "@/lib/types";
 
 const RESPONSE_SCHEMA = {
@@ -40,14 +42,21 @@ const RESPONSE_SCHEMA = {
     },
     hashtags: {
       type: Type.ARRAY,
-      description: "Exactly 5 hashtags, each a single word starting with #.",
+      description:
+        "Exactly 8 hashtags, each a single word starting with #. Two broad (#shorts, #telugu), two about the tradition or text, two about this character or episode, two about the theme.",
       items: { type: Type.STRING },
-      minItems: "5",
-      maxItems: "5",
+      minItems: "8",
+      maxItems: "8",
+    },
+    tone: {
+      type: Type.STRING,
+      description:
+        "The register this episode is written in. 'intense' for wrath, war, a curse, death or a god's judgement; 'soft' for teaching, devotion, consolation or a quiet turn. This picks whether a man or a woman narrates it.",
+      enum: ["soft", "intense"],
     },
   },
-  required: ["title", "script_body", "seo_description", "hashtags"],
-  propertyOrdering: ["title", "script_body", "seo_description", "hashtags"],
+  required: ["title", "script_body", "seo_description", "hashtags", "tone"],
+  propertyOrdering: ["title", "script_body", "seo_description", "hashtags", "tone"],
 };
 
 /** Block anything the provider considers even low-probability harmful. */
@@ -128,25 +137,29 @@ export async function generateScript(
   input: PromptInput,
   options: { log?: string[] } = {},
 ): Promise<GeneratedScript> {
-  // Each key is a separate Google project and therefore a separate daily
-  // budget. Only a quota refusal moves to the next one — see lib/gemini/rotate.
-  return withGeminiKey(
+  // Every model has its own daily budget, and every key its own copy of every
+  // model. Only a quota refusal moves on — see lib/gemini/rotate.
+  return withGeminiTarget(
     "text",
     input.cfg.geminiApiKeys,
-    (key) => generateWithKey(input, key),
+    input.cfg.geminiModels,
+    (target) => generateWithTarget(input, target),
     options,
   );
 }
 
-async function generateWithKey(input: PromptInput, apiKey: string): Promise<GeneratedScript> {
+async function generateWithTarget(
+  input: PromptInput,
+  target: GeminiTarget,
+): Promise<GeneratedScript> {
   const config = input.cfg;
   const prompt = buildPrompt(input);
   let lastError: unknown;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const response = await ai(apiKey).models.generateContent({
-        model: config.geminiModel,
+      const response = await ai(target.key).models.generateContent({
+        model: target.model,
         contents: prompt,
         config: {
           systemInstruction: systemInstruction(config),
@@ -173,7 +186,11 @@ async function generateWithKey(input: PromptInput, apiKey: string): Promise<Gene
         throw new GeminiError("Gemini response did not match the expected shape.");
       }
 
-      return parsed;
+      // Not part of the shape check: an unrecognised register is a worse
+      // narration, not a broken script, and throwing the whole thing away over
+      // it would spend another topic and another request to fix a one-word
+      // field. Anything unexpected reads as the gentler of the two.
+      return { ...parsed, tone: normaliseTone(parsed.tone) };
     } catch (error) {
       lastError = error;
 

@@ -11,6 +11,7 @@ import type { AppConfig } from "@/lib/settings/config";
 import { wordWindow } from "@/lib/settings/config";
 import { checkSafety, stripJoiners, type SafetyIssue } from "@/lib/safety/profanity";
 import { isPredominantlyTelugu } from "@/lib/safety/language";
+import { normaliseTone } from "@/lib/tts/voice";
 import type { GeneratedScript } from "@/lib/types";
 
 /**
@@ -49,6 +50,10 @@ const TELUGU_CTA = [
 /** YouTube hard limits. */
 const MAX_TITLE_CHARS = 100;
 const MAX_DESCRIPTION_CHARS = 4_900;
+
+/** The prompt asks for eight; these are the bounds a script is rejected outside. */
+const MIN_HASHTAGS = 5;
+const MAX_HASHTAGS = 10;
 
 export interface ValidationResult {
   valid: boolean;
@@ -157,8 +162,17 @@ export function validateScript(script: GeneratedScript, cfg: AppConfig): Validat
   }
 
   // ---- hashtags ----
-  if (hashtags.length !== 5) {
-    errors.push(`Expected exactly 5 usable hashtags, got ${hashtags.length}.`);
+  //
+  // A range rather than an exact count. Eight is what the prompt asks for, but
+  // cleanHashtags drops duplicates and unusable ones, and rejecting a good
+  // script — spending another topic and another request from a budget of
+  // twenty a day — because the model produced seven distinct tags instead of
+  // eight would be a bad trade. Below five there is not enough spread for the
+  // mix the prompt describes to exist at all.
+  if (hashtags.length < MIN_HASHTAGS || hashtags.length > MAX_HASHTAGS) {
+    errors.push(
+      `Expected ${MIN_HASHTAGS}-${MAX_HASHTAGS} usable hashtags, got ${hashtags.length}.`,
+    );
   }
 
   // ---- safety, across everything ----
@@ -180,6 +194,9 @@ export function validateScript(script: GeneratedScript, cfg: AppConfig): Validat
       script_body: body,
       seo_description: description,
       hashtags,
+      // Carried through untouched: the register is the model's judgement about
+      // the episode, and nothing in this file cleans or contradicts it.
+      tone: normaliseTone(script.tone),
     },
     wordCount,
   };

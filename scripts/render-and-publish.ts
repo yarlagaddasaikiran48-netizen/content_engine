@@ -22,9 +22,12 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { loadConfig } from "../src/lib/settings/config";
+import { loadConfig, type AppConfig } from "../src/lib/settings/config";
+import { uploadAudio } from "../src/lib/supabase/admin";
+import { contentTypeFor, extensionFor, speak } from "../src/lib/tts";
+import { normaliseTone } from "../src/lib/tts/voice";
 import type { SpiritualVideo } from "../src/lib/types";
 
 const WIDTH = 1080;
@@ -196,6 +199,63 @@ function audioExtension(url: string): string {
   return ext === "wav" || ext === "m4a" || ext === "ogg" ? ext : "mp3";
 }
 
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+}
+
+/**
+ * Speak the script, store the file, and write it back onto the row.
+ *
+ * The row is updated before the render continues, on purpose. A render that
+ * dies at FFmpeg has already spent a speech request, and one of only ten a
+ * day; without this the retry would spend another saying the identical words.
+ * With it, the retry finds `audio_url` already set and skips straight past.
+ *
+ * The voice comes from the register the model wrote in — a woman's for the
+ * gentle episodes, a man's for the fierce ones — which is why `tone` had to be
+ * a column rather than a local variable.
+ */
+async function recordNarration(
+  video: SpiritualVideo,
+  cfg: AppConfig,
+  db: SupabaseClient,
+): Promise<string> {
+  const log: string[] = [];
+  const tone = normaliseTone(video.tone);
+
+  console.log(`  recording narration (${tone})…`);
+  const speech = await speak(video.script_body, cfg, { tone, log });
+  for (const line of log) console.log(line);
+
+  const objectPath =
+    `${new Date().toISOString().slice(0, 10)}/` +
+    `${Date.now()}-${slugify(video.title)}.${extensionFor(speech)}`;
+
+  const { path, publicUrl } = await uploadAudio(
+    objectPath,
+    speech.audio,
+    contentTypeFor(speech),
+  );
+
+  await db
+    .from("spiritual_videos")
+    .update({
+      audio_path: path,
+      audio_url: publicUrl,
+      audio_bytes: speech.bytes,
+      duration_seconds: speech.durationSeconds,
+      voice: speech.voice,
+    })
+    .eq("id", video.id);
+
+  console.log(`  narration ${speech.durationSeconds}s in ${speech.voice}`);
+  return publicUrl;
+}
+
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
@@ -286,29 +346,57 @@ async function main(): Promise<void> {
     if (!data) throw new Error(`No video with id ${videoId}.`);
 
     const video = data as SpiritualVideo;
-    if (!video.audio_url) throw new Error("This row has no audio_url.");
-    console.log(`  "${video.title}"`);
+    console.log(`  "${video.title}" (${video.tone ?? "soft"})`);
 
     // ---- 2. workspace ----
     rmSync(TMP_DIR, { recursive: true, force: true });
     mkdirSync(TMP_DIR, { recursive: true });
 
-    // Follow the stored object rather than assume MP3. Gemini narration is
-    // WAV, Edge narration is MP3, and rows of both kinds outlive the switch.
-    // FFmpeg reads either, but only if the extension does not lie about which.
-    const audioFile = `narration.${audioExtension(video.audio_url)}`;
-    const audioPath = join(TMP_DIR, audioFile);
     const srtPath = join(TMP_DIR, "captions.srt");
     const outputPath = join(TMP_DIR, "short.mp4");
 
     // ---- 3. audio ----
-    const audioResponse = await fetch(video.audio_url);
+    //
+    // Recorded here, not when the script was written. The Gemini speech model
+    // allows ten requests a day on the free tier against twenty for text, so
+    // narrating every script the engine produced meant the scripts nobody
+    // approved were spending the scarcer budget of the two. Only an approved
+    // script reaches this point, so only an approved script costs a request.
+    //
+    // A row that already carries audio still uses it: rows written before the
+    // change, and re-runs of a render that failed after the upload.
+    const audioUrl = video.audio_url ?? (await recordNarration(video, cfg, supabase));
+
+    // Follow the stored object rather than assume MP3. Gemini narration is
+    // WAV, Edge narration is MP3, and rows of both kinds outlive the switch.
+    // FFmpeg reads either, but only if the extension does not lie about which.
+    const audioFile = `narration.${audioExtension(audioUrl)}`;
+    const audioPath = join(TMP_DIR, audioFile);
+
+    const audioResponse = await fetch(audioUrl);
     if (!audioResponse.ok) {
       throw new Error(`Could not download the audio (HTTP ${audioResponse.status}).`);
     }
     writeFileSync(audioPath, Buffer.from(await audioResponse.arrayBuffer()));
 
     const audioSeconds = probeDuration(audioPath);
+
+    // ---- 3b. the duration gate ----
+    //
+    // Word count only *predicts* spoken length; long words and heavy
+    // punctuation both defeat it. This used to run inside the generator, where
+    // the real MP3 already existed. It runs here now for the same reason the
+    // narration does, and it still runs before the upload, so an overlong take
+    // costs a render rather than reaching the channel.
+    const longest = cfg.targetSeconds * (1 + cfg.wordCountTolerance);
+    const shortest = cfg.targetSeconds * (1 - cfg.wordCountTolerance);
+    if (audioSeconds > longest || audioSeconds < shortest) {
+      throw new Error(
+        `The narration came out ${audioSeconds.toFixed(1)}s against a ${cfg.targetSeconds}s ` +
+          `target (allowed ${shortest.toFixed(1)}-${longest.toFixed(1)}s). ` +
+          `Discard it and let the engine write another, or widen "Length tolerance" in Settings.`,
+      );
+    }
     const duration = Number((audioSeconds + 0.6).toFixed(2));
     console.log(`  audio ${audioSeconds.toFixed(2)}s → video ${duration}s`);
 
@@ -329,10 +417,25 @@ async function main(): Promise<void> {
     // input differs. Running FFmpeg with cwd=TMP_DIR lets the subtitles filter
     // take a bare filename, which avoids the drive-letter escaping that breaks
     // this filter on Windows.
+    // The subscribe card, held for the last couple of seconds.
+    //
+    // On screen rather than in the narration, deliberately. A spoken "subscribe"
+    // costs words out of a sixty-second budget that is already tight, and it
+    // lands as an ad in the middle of a story — which is why the writing prompt
+    // bans it outright. Drawn over the closing beat it costs nothing and is
+    // still there when the thumb hovers.
+    const endCardFrom = Math.max(0, duration - cfg.endCardSeconds);
+    const endCard = cfg.endCardText.trim();
+
     const commonFilters = [
       `subtitles=captions.srt:force_style='${SUBTITLE_STYLE}'`,
       footer
         ? `drawtext=text='${footer}':fontcolor=white@0.72:fontsize=30:x=(w-text_w)/2:y=h-140`
+        : null,
+      endCard
+        ? `drawtext=text='${escapeDrawText(endCard)}':fontcolor=white:fontsize=58:box=1:` +
+          `boxcolor=black@0.55:boxborderw=26:x=(w-text_w)/2:y=(h-text_h)/2:` +
+          `enable='gte(t,${endCardFrom.toFixed(2)})'`
         : null,
       "vignette=PI/5",
       `fade=t=in:st=0:d=0.5,fade=t=out:st=${(duration - 0.5).toFixed(2)}:d=0.5`,

@@ -75,26 +75,37 @@ export function VideoCard({ video, busy, onApprove, onReject }: Props) {
         )}
       </div>
 
-      {/* ---- audio ---- */}
-      {video.audio_url && (
-        <div className="px-4 pb-3">
-          {/* preload="none" keeps mobile data usage at zero until it's played. */}
+      {/* ---- audio, or the facts about the audio that does not exist yet ----
+          Narration is recorded when a script is approved, not when it is
+          written, so a card in the deck normally has none: the speech model
+          allows ten requests a day against twenty for text, and spending them
+          on scripts nobody approves was the wrong way round. You read the
+          script below and decide; the voice is made for the one you keep. */}
+      <div className="px-4 pb-3">
+        {video.audio_url ? (
+          /* preload="none" keeps mobile data usage at zero until it's played. */
           <audio controls preload="none" src={video.audio_url} className="rounded-lg">
             Your browser cannot play this audio.
           </audio>
-          <div
-            className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs"
-            style={{ color: "var(--text-faint)" }}
-          >
-            <span>{formatDuration(video.duration_seconds)}</span>
-            <span>{video.word_count ?? "—"} words</span>
-            <span>{video.voice}</span>
-            {typeof video.max_similarity === "number" && (
-              <span>{Math.round(video.max_similarity * 100)}% similar to past</span>
-            )}
-          </div>
+        ) : null}
+        <div
+          className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+          style={{ color: "var(--text-faint)" }}
+        >
+          <span>
+            {video.audio_url
+              ? formatDuration(video.duration_seconds)
+              : `≈ ${formatDuration(video.duration_seconds)}`}
+          </span>
+          <span>{video.word_count ?? "—"} words</span>
+          <span title="Whose voice will read this once you approve it">
+            {video.tone === "intense" ? "fierce — man's voice" : "gentle — woman's voice"}
+          </span>
+          {typeof video.max_similarity === "number" && (
+            <span>{Math.round(video.max_similarity * 100)}% similar to past</span>
+          )}
         </div>
-      )}
+      </div>
 
       {/* ---- script ---- */}
       <div className="px-4 pb-3">

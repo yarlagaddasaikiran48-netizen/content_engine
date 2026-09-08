@@ -45,6 +45,7 @@ const SAMPLE = {
     "The story of Dhruva from the Vishnu Purana, and what it means to stay fixed " +
     "when you have been pushed aside. Vishnu Purana, Book 1, Chapters 11 to 12.",
   hashtags: ["#Dhruva", "#VishnuPurana", "#Spirituality", "#Bhakti", "#Sanatan"],
+      tone: "soft" as const,
 };
 
 async function main(): Promise<void> {

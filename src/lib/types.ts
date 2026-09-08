@@ -1,3 +1,5 @@
+import type { ScriptTone } from "@/lib/tts/voice";
+
 export type VideoStatus =
   | "pending"
   | "approved"
@@ -60,6 +62,8 @@ export interface SpiritualVideo {
   duration_seconds: number | null;
   word_count: number | null;
   voice: string;
+  /** soft | intense — set at write time, read by the renderer to pick a voice. */
+  tone: ScriptTone;
 
   youtube_video_id: string | null;
   youtube_url: string | null;
@@ -110,6 +114,8 @@ export interface GeneratedScript {
   script_body: string;
   seo_description: string;
   hashtags: string[];
+  /** Which register it wrote in, and therefore whose voice reads it aloud. */
+  tone: ScriptTone;
 }
 
 /** The "why today" angle: real calendar + real trends, never invented. */

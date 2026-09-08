@@ -7,12 +7,12 @@ let geminiBehaviour: "ok" | "throw" | "quota-then-ok" | "throw-fatal" = "ok";
 /** Stand in for the Supabase-backed lease, so the seam under test is the rotation. */
 const cooledDown: string[] = [];
 vi.mock("@/lib/pipeline/cooldown", () => ({
-  surveyKeys: async (_purpose: string, keys: string[]) => ({
-    free: keys.filter((key) => !cooledDown.includes(key)),
+  surveyTargets: async (_purpose: string, targets: Array<{ key: string; model: string }>) => ({
+    free: targets.filter((t) => !cooledDown.includes(`${t.model}:${t.key}`)),
     soonest: 3_600,
   }),
-  startQuotaCooldown: async (_purpose: string, key: string) => {
-    cooledDown.push(key);
+  startQuotaCooldown: async (_purpose: string, target: { key: string; model: string }) => {
+    cooledDown.push(`${target.model}:${target.key}`);
   },
   describeCooldown: (seconds: number) => `${seconds} seconds`,
 }));
@@ -57,6 +57,7 @@ const cfg = {
   ttsProvider: "gemini",
   geminiApiKey: "key",
   geminiApiKeys: ["key"],
+  geminiTtsModels: ["tts-a"],
   ttsVoice: "te-IN-ShrutiNeural",
   ttsGeminiVoice: "Charon",
   ttsStylePrompt: "Read slowly",
@@ -124,7 +125,7 @@ describe("speak", () => {
     expect(result.format).toBe("wav");
     expect(geminiCalls.map((c) => c.opts.apiKey)).toEqual(["key", "friend-key"]);
     expect(edgeCalls).toHaveLength(0);
-    expect(cooledDown).toEqual(["key"]);
+    expect(cooledDown).toEqual(["tts-a:key"]);
     expect(log.join("\n")).toMatch(/out of voice quota/i);
   });
 

@@ -22,6 +22,13 @@ export interface AppConfig {
   /** Every key set, in the order Settings lists them, blanks and duplicates dropped. */
   geminiApiKeys: string[];
   geminiModel: string;
+  /**
+   * The text models to spend, best first, starting with `geminiModel`. Each
+   * has its own daily quota on the same key — see lib/gemini/rotate.ts.
+   */
+  geminiModels: string[];
+  /** The voice models to spend, best first. Edge answers after all are spent. */
+  geminiTtsModels: string[];
   geminiThinkingBudget: number;
 
   youtubeClientId: string;
@@ -46,12 +53,17 @@ export interface AppConfig {
   wordCountTolerance: number;
   ttsProvider: string;
   ttsVoice: string;
+  ttsVoiceIntense: string;
   ttsGeminiVoice: string;
+  ttsGeminiVoiceIntense: string;
   ttsStylePrompt: string;
+  ttsStylePromptIntense: string;
   ttsRate: string;
   ttsPitch: string;
   ttsVolume: string;
   ttsWordsPerMinute: number;
+  endCardText: string;
+  endCardSeconds: number;
   similarityThreshold: number;
   learningEnabled: boolean;
   puranaRotation: boolean;
@@ -102,6 +114,28 @@ function asBoolean(rows: Rows, key: string): boolean {
   return resolve(rows, key) === "true";
 }
 
+/**
+ * The primary model followed by its fallbacks, best first.
+ *
+ * Deduped because the primary is very often also named in the fallback list —
+ * an operator moving a model up the ladder edits one field and forgets the
+ * other — and a duplicate would spend a second refused request proving a
+ * budget we already know is gone.
+ */
+function asModelChain(primary: string, fallbacks: string): string[] {
+  const seen = new Set<string>();
+  const chain: string[] = [];
+
+  for (const candidate of [primary, ...fallbacks.split(/[,\n]/)]) {
+    const model = candidate.trim();
+    if (!model || seen.has(model)) continue;
+    seen.add(model);
+    chain.push(model);
+  }
+
+  return chain;
+}
+
 function asTimes(rows: Rows): string[] {
   try {
     const parsed: unknown = JSON.parse(resolve(rows, "posting_times"));
@@ -132,6 +166,11 @@ export async function loadConfig(): Promise<AppConfig> {
     geminiApiKey: geminiApiKeys[0] ?? "",
     geminiApiKeys,
     geminiModel: resolve(rows, "gemini_model"),
+    geminiModels: asModelChain(resolve(rows, "gemini_model"), resolve(rows, "gemini_model_fallbacks")),
+    geminiTtsModels: asModelChain(
+      resolve(rows, "gemini_tts_model"),
+      resolve(rows, "gemini_tts_model_fallbacks"),
+    ),
     geminiThinkingBudget: asNumber(rows, "gemini_thinking_budget"),
 
     youtubeClientId: resolve(rows, "youtube_client_id"),
@@ -155,12 +194,17 @@ export async function loadConfig(): Promise<AppConfig> {
     wordCountTolerance: asNumber(rows, "word_count_tolerance"),
     ttsProvider: resolve(rows, "tts_provider"),
     ttsVoice: resolve(rows, "tts_voice"),
+    ttsVoiceIntense: resolve(rows, "tts_voice_intense"),
     ttsGeminiVoice: resolve(rows, "tts_gemini_voice"),
+    ttsGeminiVoiceIntense: resolve(rows, "tts_gemini_voice_intense"),
     ttsStylePrompt: resolve(rows, "tts_style_prompt"),
+    ttsStylePromptIntense: resolve(rows, "tts_style_prompt_intense"),
     ttsRate: resolve(rows, "tts_rate"),
     ttsPitch: resolve(rows, "tts_pitch"),
     ttsVolume: resolve(rows, "tts_volume"),
     ttsWordsPerMinute: asNumber(rows, "tts_words_per_minute"),
+    endCardText: resolve(rows, "end_card_text"),
+    endCardSeconds: asNumber(rows, "end_card_seconds"),
     similarityThreshold: asNumber(rows, "similarity_threshold"),
     learningEnabled: asBoolean(rows, "learning_enabled"),
     puranaRotation: asBoolean(rows, "purana_rotation"),

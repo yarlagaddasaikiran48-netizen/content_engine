@@ -7,25 +7,30 @@
  *   -> validate length, structure and language safety
  *   -> reject if the content hash already exists (layer 2)
  *   -> reject if too similar to recent scripts (layer 3)
- *   -> Edge TTS renders the narration
- *   -> upload the MP3 to Supabase Storage
  *   -> insert the row as 'pending'
  *   -> mark the topic permanently spent
  *
  * Any rejection releases the topic back to the pool and tries a different one,
  * up to MAX_GENERATION_ATTEMPTS. Every outcome is written to generation_log.
+ *
+ * Note what is NOT here any more: the narration. It used to be recorded for
+ * every script this loop produced, and on this project's free tier that was
+ * backwards — the text models allow twenty requests a day, the speech model
+ * ten, so every script rejected on sight spent the scarcer of the two budgets.
+ * The renderer records it after approval instead, for the one script that is
+ * actually going to become a video.
  */
 
 import { loadConfig, wordWindow, type AppConfig } from "@/lib/settings/config";
 import { contentHash } from "@/lib/dedupe/hash";
-import { describeCooldown, surveyKeys } from "@/lib/pipeline/cooldown";
+import { describeCooldown, surveyTargets } from "@/lib/pipeline/cooldown";
 import { isFatalGenerationError, isQuotaError, quotaRetrySeconds } from "@/lib/pipeline/fatal";
 import { generateScript } from "@/lib/gemini/generate";
+import { buildTargets } from "@/lib/gemini/rotate";
 import { buildHookContext } from "@/lib/sources/hook";
 import { fetchGitaVerse } from "@/lib/sources/gita";
 import { rotationFrom } from "@/lib/sources/mahapuranas";
-import { deleteAudio, supabaseAdmin, uploadAudio } from "@/lib/supabase/admin";
-import { contentTypeFor, extensionFor, speak } from "@/lib/tts";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { validateScript } from "@/lib/safety/validate";
 import type { SpiritualVideo, Topic } from "@/lib/types";
 
@@ -46,8 +51,9 @@ type LogOutcome =
   | "invalid"
   | "error"
   | "no_topics"
-  // The audio came out outside the target duration. Distinct from "invalid",
-  // which is a word-count guess; these two are measured facts about the MP3.
+  // Measured facts about the MP3, recorded by the renderer now that the
+  // narration is made there. Distinct from "invalid", which is the word-count
+  // guess this loop makes before any audio exists.
   | "too_long"
   | "too_short";
 
@@ -194,14 +200,6 @@ async function similarityAgainstHistory(body: string): Promise<number> {
   return typeof data === "number" ? data : 0;
 }
 
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60);
-}
-
 export async function generateVideo(): Promise<GenerationOutcome> {
   const config = await loadConfig();
   const log: string[] = [];
@@ -298,55 +296,33 @@ export async function generateVideo(): Promise<GenerationOutcome> {
         continue;
       }
 
-      // ---- 5. voice ----
-      const speech = await speak(script.script_body, config, { log });
+      // ---- 5. no voice yet ----
+      //
+      // Narration used to be recorded here, for every script the engine wrote.
+      // On this project's free tier that was the wrong way round by an order
+      // of magnitude: the text models allow twenty requests a day and the
+      // speech model allows ten, so every script rejected on sight was
+      // spending the scarcer budget of the two. Seven scripts were rejected in
+      // one evening, and seven narrations nobody ever heard went with them.
+      //
+      // The narration is now recorded by the renderer, after approval, for the
+      // one script that is actually going to become a video. That also matches
+      // how the operator works: they read the script and decide, rather than
+      // listening to it.
+      //
+      // The cost is that the duration gate — which measured the real MP3,
+      // because word count only *predicts* spoken length — cannot run until
+      // the render. It still runs there, and a take that comes out too long or
+      // too short fails the render loudly instead of reaching YouTube. Until
+      // then this is the estimate the deck shows.
+      const estimatedSeconds = Number(
+        ((validation.wordCount / config.ttsWordsPerMinute) * 60).toFixed(2),
+      );
       log.push(
-        `  voiced: ${speech.durationSeconds}s, ${(speech.bytes / 1024).toFixed(0)} KB, ${speech.voice}`,
+        `  ${validation.wordCount} words ≈ ${estimatedSeconds}s at ${config.ttsWordsPerMinute} wpm; narration is recorded on approval.`,
       );
 
-      // ---- 5b. the duration gate ----
-      // Word count only *predicts* spoken length. Long words and heavy
-      // punctuation both defeat it, so the real MP3 is the only honest check.
-      // This runs before the upload so an overlong take costs no storage and
-      // never reaches the review deck.
-      const longest = config.targetSeconds * (1 + config.wordCountTolerance);
-      const shortest = config.targetSeconds * (1 - config.wordCountTolerance);
-
-      if (speech.durationSeconds > longest) {
-        log.push(
-          `  rejected (too long): ${speech.durationSeconds.toFixed(1)}s of audio against a ${config.targetSeconds}s target (limit ${longest.toFixed(1)}s).`,
-        );
-        await recordAttempt(
-          topic.topic_key,
-          attempt,
-          "too_long",
-          `${speech.durationSeconds.toFixed(1)}s > ${longest.toFixed(1)}s`,
-        );
-        rejectedAngles.push(script.title);
-        await releaseTopic(topic.topic_key);
-        continue;
-      }
-
-      if (speech.durationSeconds < shortest) {
-        log.push(
-          `  rejected (too short): ${speech.durationSeconds.toFixed(1)}s of audio against a ${config.targetSeconds}s target (minimum ${shortest.toFixed(1)}s).`,
-        );
-        await recordAttempt(
-          topic.topic_key,
-          attempt,
-          "too_short",
-          `${speech.durationSeconds.toFixed(1)}s < ${shortest.toFixed(1)}s`,
-        );
-        rejectedAngles.push(script.title);
-        await releaseTopic(topic.topic_key);
-        continue;
-      }
-
-      // ---- 6. store the audio ----
-      const objectPath = `${new Date().toISOString().slice(0, 10)}/${Date.now()}-${slugify(script.title)}.${extensionFor(speech)}`;
-      const { path, publicUrl } = await uploadAudio(objectPath, speech.audio, contentTypeFor(speech));
-
-      // ---- 7. queue it ----
+      // ---- 6. queue it ----
       const { data: inserted, error: insertError } = await supabaseAdmin()
         .from("spiritual_videos")
         .insert({
@@ -365,12 +341,11 @@ export async function generateVideo(): Promise<GenerationOutcome> {
           hook_context: hook.summary,
           content_hash: hash,
           max_similarity: similarity,
-          audio_path: path,
-          audio_url: publicUrl,
-          audio_bytes: speech.bytes,
-          duration_seconds: speech.durationSeconds,
+          // Audio arrives at render time. duration_seconds holds the estimate
+          // until then, and the renderer overwrites it with the measured truth.
+          duration_seconds: estimatedSeconds,
           word_count: validation.wordCount,
-          voice: speech.voice,
+          tone: script.tone,
           model: config.geminiModel,
           target_seconds: config.targetSeconds,
           expires_at: new Date(Date.now() + config.rejectTtlHours * 3_600_000).toISOString(),
@@ -380,8 +355,8 @@ export async function generateVideo(): Promise<GenerationOutcome> {
 
       if (insertError) {
         // 23505 = unique violation, i.e. another run inserted the same script
-        // between our check and our write.
-        await deleteAudio(path);
+        // between our check and our write. Nothing to clean up any more: no
+        // audio was recorded, which is the point of recording it later.
         if (insertError.code === "23505") {
           log.push("  rejected (duplicate): lost an insert race on content_hash.");
           await recordAttempt(topic.topic_key, attempt, "duplicate", "unique violation");
@@ -409,26 +384,29 @@ export async function generateVideo(): Promise<GenerationOutcome> {
       if (topic) await releaseTopic(topic.topic_key);
 
       // A spent quota stands the engine down until a key frees up. The
-      // refusal has already been remembered — withGeminiKey records a
-      // cooldown against the individual key that was refused, which is the
-      // only place that knows which one it was. Reaching here means every key
-      // has now been refused, so there is nothing left to try this tick.
+      // refusal has already been remembered — withGeminiTarget records a
+      // cooldown against the individual model and key that was refused, which
+      // is the only place that knows which one it was. Reaching here means
+      // every model on every key has now been refused, so there is nothing
+      // left to try this tick.
       if (isQuotaError(message)) {
-        const { soonest } = await surveyKeys("text", config.geminiApiKeys);
+        const { soonest } = await surveyTargets(
+          "text",
+          buildTargets(config.geminiApiKeys, config.geminiModels),
+        );
         const readable = describeCooldown(soonest || quotaRetrySeconds(message));
-        const count = config.geminiApiKeys.length;
-        log.push(`  Every Gemini key is spent. Standing down for ${readable}.`);
+        const count = config.geminiApiKeys.length * config.geminiModels.length;
+        log.push(
+          `  All ${count} model/key combinations are spent. Standing down for ${readable}.`,
+        );
         return {
           ok: false,
           attempts: attempt,
           log,
           error:
-            `Gemini refused: ${count === 1 ? "the API quota is" : `all ${count} keys are`} used up. ` +
-            `Nothing is wrong with the scripts — none was written. Waiting ${readable} before ` +
-            `trying again. ` +
-            (count === 1
-              ? `Adding a second key from a different Google account in Settings would keep it writing.`
-              : `Raise the limit in Google AI Studio, or lower "scripts per day".`),
+            `Gemini refused: all ${count} model and key combinations are out of quota. ` +
+            `Nothing is wrong with the scripts — none was written. Writing resumes in ${readable}. ` +
+            `Adding a key from a different Google account in Settings multiplies the whole ladder again.`,
         };
       }
 

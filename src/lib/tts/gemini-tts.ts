@@ -95,7 +95,7 @@ export async function synthesizeWithGemini(
   if (!clean) throw new GeminiTTSError("Cannot synthesize empty text.");
   if (!options.apiKey) throw new GeminiTTSError("A Gemini API key is required for Gemini TTS.");
 
-  const model = options.model ?? DEFAULT_GEMINI_TTS_MODEL;
+  const model = options.model?.trim() || DEFAULT_GEMINI_TTS_MODEL;
   let response: unknown;
 
   try {
