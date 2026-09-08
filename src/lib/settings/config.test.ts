@@ -21,7 +21,7 @@ function set(key: string, value: string) {
 
 describe("loadConfig", () => {
   it("falls back to the catalogue default when nothing is stored", async () => {
-    expect((await loadConfig()).targetSeconds).toBe(30);
+    expect((await loadConfig()).targetSeconds).toBe(60);
   });
 
   it("uses the environment variable when the row is unset", async () => {
@@ -95,7 +95,9 @@ describe("wordWindow", () => {
   it("reproduces the documented 30s window", async () => {
     // Telugu at the measured 80 wpm: 40 words for thirty seconds, not the 74
     // the English voice needed. One agglutinative word carries what English
-    // spends three or four on.
+    // spends three or four on. Set explicitly rather than leaned on as the
+    // default, which is sixty now.
+    set("target_seconds", "30");
     const w = wordWindow(await loadConfig());
     expect(w.ideal).toBe(40);
     expect(w.min).toBe(34);
@@ -103,11 +105,13 @@ describe("wordWindow", () => {
   });
 
   it("scales with the configured length", async () => {
-    set("target_seconds", "60");
+    // Ninety rather than sixty: sixty is the default, so it would prove
+    // nothing about following a stored row.
+    set("target_seconds", "90");
     const w = wordWindow(await loadConfig());
-    expect(w.ideal).toBe(80);
-    expect(w.min).toBe(68);
-    expect(w.max).toBe(92);
+    expect(w.ideal).toBe(120);
+    expect(w.min).toBe(102);
+    expect(w.max).toBe(138);
   });
 
   it("follows the voice's measured rate", async () => {

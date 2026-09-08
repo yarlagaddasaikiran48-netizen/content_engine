@@ -48,7 +48,7 @@ describe("SETTING_DEFS", () => {
     const def = settingDef("target_seconds");
     expect(def.min).toBe(20);
     expect(def.max).toBe(90);
-    expect(def.fallback).toBe("30");
+    expect(def.fallback).toBe("60");
   });
 
   it("defaults posting_times to the two slots the operator chose", () => {

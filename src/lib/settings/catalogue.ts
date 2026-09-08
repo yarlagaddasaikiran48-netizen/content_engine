@@ -185,7 +185,7 @@ export const SETTING_DEFS: readonly SettingDef[] = [
     min: 20,
     max: 90,
     fallbackEnv: "TARGET_SECONDS",
-    fallback: "30",
+    fallback: "60",
     help: "The word count and the prompt's beat sheet both follow this.",
   },
   {
