@@ -15,9 +15,21 @@ on:
         required: true
         type: string
 
-# Never render the same item twice concurrently.
+# Never render the same item twice concurrently — but only the same item.
+#
+# This read "render-${{ github.event.client_payload.video_id || inputs.video_id }}",
+# and when neither side resolves, every render in the repository collapses into
+# the single group "render-" and queues behind whichever one is already going.
+# That is what it was doing: two renders of two different videos ran three
+# seconds apart, back to back, because the second was never allowed to start
+# until the first finished. One stalled run then blocks the whole channel.
+#
+# github.event.inputs is the form that resolves for a dispatched input, and
+# run_id is the backstop: if we cannot tell which video this is, give it a group
+# of its own rather than a shared one. Serialising everything is the worse
+# failure, because it is invisible — a queued run looks exactly like a slow one.
 concurrency:
-  group: render-${{ github.event.client_payload.video_id || inputs.video_id }}
+  group: render-${{ github.event.client_payload.video_id || github.event.inputs.video_id || github.run_id }}
   cancel-in-progress: false
 
 jobs:
