@@ -98,8 +98,8 @@ export const SETTING_DEFS: readonly SettingDef[] = [
     kind: "text",
     secret: false,
     fallbackEnv: "GEMINI_TTS_MODEL",
-    fallback: "gemini-3.1-flash-tts-preview",
-    help: "Only 10 requests a day on the free tier — which is why narration is now recorded when you approve a script, not when it is written.",
+    fallback: "gemini-2.5-flash-preview-tts",
+    help: "Only 10 requests a day on the free tier — which is why narration is recorded when you approve a script, not when it is written. Must be a model that answers on generateContent: gemini-3.1-flash-tts-preview is real but speaks over the newer interactions endpoint, so it returns a reply with no audio in it and every narration falls through to Edge.",
   },
   {
     key: "gemini_tts_model_fallbacks",
@@ -108,7 +108,9 @@ export const SETTING_DEFS: readonly SettingDef[] = [
     kind: "text",
     secret: false,
     fallbackEnv: "GEMINI_TTS_MODEL_FALLBACKS",
-    fallback: "gemini-2.5-flash-tts-preview",
+    // Was "gemini-2.5-flash-tts-preview", which is not a model — the words are
+    // the wrong way round. Google's ids put the modality last.
+    fallback: "gemini-2.5-pro-preview-tts",
     help: "Comma-separated, best first. After all of these are spent the narration falls through to Edge, which is free and unlimited.",
   },
   {
@@ -268,7 +270,9 @@ export const SETTING_DEFS: readonly SettingDef[] = [
     kind: "text",
     secret: false,
     fallbackEnv: "IMAGE_MODEL",
-    fallback: "gemini-3.1-flash-image-preview",
+    // gemini-3.1-flash-image, not -image-preview: the preview suffix belongs
+    // to the 3-pro id, not this one.
+    fallback: "gemini-3.1-flash-image",
     help: "Metered separately from the writing and voice models, and far more generously — hundreds of images a day on the free tier. If the name is refused, the current one is listed in AI Studio; change it here, no deploy needed.",
   },
   {

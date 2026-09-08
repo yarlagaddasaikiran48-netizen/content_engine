@@ -65,6 +65,33 @@ describe("SETTING_DEFS", () => {
     }
   });
 
+  /**
+   * A wrong model id does not fail loudly here. The speech call returns a
+   * perfectly good response with no audio in it, the narration falls through
+   * to Edge, and the only symptom is that the voice sounds like a machine —
+   * which is a thing you notice days later, on a published video.
+   *
+   * Two ids were wrong at once. "gemini-3.1-flash-tts-preview" is a real
+   * model, but it answers on the newer interactions endpoint rather than
+   * generateContent, which is what this engine calls. "gemini-2.5-flash-tts-preview"
+   * is not a model at all: Google puts the modality last, so it is
+   * gemini-2.5-flash-preview-tts.
+   */
+  it("names voice models that answer on generateContent, with the modality last", () => {
+    const chain = [
+      settingDef("gemini_tts_model").fallback,
+      ...settingDef("gemini_tts_model_fallbacks").fallback.split(","),
+    ].map((m) => m.trim()).filter(Boolean);
+
+    expect(chain.length).toBeGreaterThan(0);
+    for (const model of chain) {
+      expect(model, `${model} puts the modality before "preview"`).toMatch(/-preview-tts$/);
+      expect(model, `${model} only answers on the interactions endpoint`).not.toBe(
+        "gemini-3.1-flash-tts-preview",
+      );
+    }
+  });
+
   it("throws a helpful error for an unknown key", () => {
     expect(() => settingDef("nope")).toThrow(/unknown setting/i);
   });
